@@ -832,21 +832,38 @@ function fetchCategoryStructured(category) {
     limit: 500
   });
 
-  // Filter for category
+  // Filter for category - ONLY use tags for precise matching
   const categoryMarkets = allMarkets.filter(market => {
-    const question = (market.question || '').toLowerCase();
-    const description = (market.description || '').toLowerCase();
-    const tags = (market.tags || []).map(t => {
+    if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+      return false; // Skip markets without tags
+    }
+
+    const tags = market.tags.map(t => {
       if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
       return (t || '').toLowerCase();
-    });
+    }).filter(t => t !== ''); // Remove empty tags
 
     const categoryLower = category.toLowerCase();
 
-    return question.includes(categoryLower) ||
-           description.includes(categoryLower) ||
-           tags.some(tag => tag.includes(categoryLower));
+    // Check if category matches any tag (exact or contains)
+    const matches = tags.some(tag => {
+      return tag === categoryLower || tag.includes(categoryLower);
+    });
+
+    // Log for debugging
+    if (matches) {
+      Logger.log(`✓ Matched "${category}" in market: ${market.question} | Tags: ${tags.join(', ')}`);
+    }
+
+    return matches;
   });
+
+  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
+
+  if (categoryMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert(`No markets found in category "${category}".\n\nTry:\n- Checking "Show Available Tags" to see actual category names\n- Using "All Markets" to see everything\n- Different category name`);
+    return;
+  }
 
   displayMarketsStructured(sheet, categoryMarkets);
 }
@@ -864,20 +881,38 @@ function fetchCategoryOriginal(category) {
     limit: 500
   });
 
+  // Filter for category - ONLY use tags for precise matching
   const categoryMarkets = allMarkets.filter(market => {
-    const question = (market.question || '').toLowerCase();
-    const description = (market.description || '').toLowerCase();
-    const tags = (market.tags || []).map(t => {
+    if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+      return false; // Skip markets without tags
+    }
+
+    const tags = market.tags.map(t => {
       if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
       return (t || '').toLowerCase();
-    });
+    }).filter(t => t !== ''); // Remove empty tags
 
     const categoryLower = category.toLowerCase();
 
-    return question.includes(categoryLower) ||
-           description.includes(categoryLower) ||
-           tags.some(tag => tag.includes(categoryLower));
+    // Check if category matches any tag (exact or contains)
+    const matches = tags.some(tag => {
+      return tag === categoryLower || tag.includes(categoryLower);
+    });
+
+    // Log for debugging
+    if (matches) {
+      Logger.log(`✓ Matched "${category}" in market: ${market.question} | Tags: ${tags.join(', ')}`);
+    }
+
+    return matches;
   });
+
+  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
+
+  if (categoryMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert(`No markets found in category "${category}".\n\nTry:\n- Checking "Show Available Tags" to see actual category names\n- Using "All Markets" to see everything\n- Different category name`);
+    return;
+  }
 
   displayMarkets(sheet, categoryMarkets);
 }
