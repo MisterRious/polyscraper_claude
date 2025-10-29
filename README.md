@@ -45,13 +45,27 @@ A Google Apps Script to fetch and display Polymarket prediction market data dire
 
 ## Usage
 
-### Quick Start: Fetch Copa Libertadores Data (Structured Format)
+### Quick Start: Fetch Markets by Category (Structured Format)
 
-1. Click **Polymarket** menu → **Structured Format (Recommended)** → **📊 Copa Libertadores (Structured)**
-2. The script will fetch all markets related to Copa Libertadores
+1. Click **Polymarket** menu → **Structured Format (Recommended)**
+2. Choose a category:
+   - **📊 All Markets** - Fetch all active markets
+   - **Politics** - Political prediction markets
+   - **Sports** - Sports betting markets
+   - **Finance** - Financial markets
+   - **Crypto** - Cryptocurrency predictions
+   - **Geopolitics** - International affairs
+   - **Earnings** - Company earnings predictions
+   - **Tech** - Technology sector
+   - **Culture** - Cultural events
+   - **World** - World events
+   - **Economy** - Economic indicators
+   - **Elections** - Election predictions
+   - **Mentions** - Social mentions markets
+
 3. Data will be displayed in structured format (one row per outcome)
 
-**Example output:**
+**Example output for Sports:**
 ```
 Category | SubCategory1 | SubCategory2      | Listing     | Date       | Time  | Moneyline | Outcome | Price
 Sports   | Soccer       | Copa Libertadores | RAC vs FLA  | 2025-10-29 | 20:30 | RAC       | YES     | 31
