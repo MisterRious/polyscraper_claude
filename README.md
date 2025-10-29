@@ -4,12 +4,15 @@ A Google Apps Script to fetch and display Polymarket prediction market data dire
 
 ## Features
 
-- 📊 Fetch market data from Polymarket's Gamma API
+- 📊 **Two output formats**: Structured (recommended) and Original
+- 🎯 **Structured Format**: One row per outcome, perfect for sports betting analysis
 - ⚽ Filter by tags (Sports, Soccer, Copa Libertadores, etc.)
 - 🔄 Automatic data refresh
 - 📅 Track odds, volume, liquidity, and dates
 - 🎨 Clean, formatted spreadsheet output
 - 🔍 Keyword search functionality
+- 🌍 Timezone conversion (America/Toronto)
+- 📈 Integer percentage pricing
 
 ## Installation
 
@@ -42,11 +45,36 @@ A Google Apps Script to fetch and display Polymarket prediction market data dire
 
 ## Usage
 
-### Quick Start: Fetch Copa Libertadores Data
+### Quick Start: Fetch Markets by Category (Structured Format)
 
-1. Click **Polymarket** menu → **Fetch Copa Libertadores**
-2. The script will fetch all markets related to Copa Libertadores
-3. Data will be displayed in a formatted table
+1. Click **Polymarket** menu → **Structured Format (Recommended)**
+2. Choose a category:
+   - **📊 All Markets** - Fetch all active markets
+   - **Politics** - Political prediction markets
+   - **Sports** - Sports betting markets
+   - **Finance** - Financial markets
+   - **Crypto** - Cryptocurrency predictions
+   - **Geopolitics** - International affairs
+   - **Earnings** - Company earnings predictions
+   - **Tech** - Technology sector
+   - **Culture** - Cultural events
+   - **World** - World events
+   - **Economy** - Economic indicators
+   - **Elections** - Election predictions
+   - **Mentions** - Social mentions markets
+
+3. Data will be displayed in structured format (one row per outcome)
+
+**Example output for Sports:**
+```
+Category | SubCategory1 | SubCategory2      | Listing     | Date       | Time  | Moneyline | Outcome | Price
+Sports   | Soccer       | Copa Libertadores | RAC vs FLA  | 2025-10-29 | 20:30 | RAC       | YES     | 31
+Sports   | Soccer       | Copa Libertadores | RAC vs FLA  | 2025-10-29 | 20:30 | RAC       | NO      | 72
+Sports   | Soccer       | Copa Libertadores | RAC vs FLA  | 2025-10-29 | 20:30 | DRAW      | YES     | 30
+...
+```
+
+**See [STRUCTURED_FORMAT.md](STRUCTURED_FORMAT.md) for complete documentation.**
 
 ### Fetch Markets by Tag
 
@@ -78,9 +106,42 @@ To set up automatic data refresh:
 2. Run the function `setupAutoRefresh` from the script editor
 3. Specify refresh interval (default: 1 hour)
 
-## Output Format
+## Output Formats
 
-The script creates a table with the following columns:
+The script supports two output formats:
+
+### 🎯 Structured Format (Recommended for Sports)
+
+**Best for:** Sports betting, data analysis, exports to other systems
+
+One row per outcome with these columns:
+
+| Column | Description | Example |
+|--------|-------------|---------|
+| Category | Top-level category | Sports |
+| SubCategory1 | First subcategory | Soccer |
+| SubCategory2 | Second subcategory | Copa Libertadores |
+| Listing | Match name | RAC vs FLA |
+| Date | Event date (YYYY-MM-DD) | 2025-10-29 |
+| Time | Event time (HH:MM) | 20:30 |
+| Timezone | Timezone | America/Toronto |
+| Moneyline | Outcome being bet on | RAC, DRAW, FLA |
+| Outcome | YES or NO | YES |
+| Price | Probability (%) | 31 |
+
+**Features:**
+- Automatically extracts team names
+- Converts to Toronto timezone
+- Creates multiple rows per market (one per outcome)
+- Perfect for CSV export and database import
+
+**See:** [STRUCTURED_FORMAT.md](STRUCTURED_FORMAT.md) for complete guide
+
+### 📋 Original Format (Compact View)
+
+**Best for:** Quick overview, browsing markets
+
+The original format creates a table with the following columns:
 
 | Column | Description |
 |--------|-------------|

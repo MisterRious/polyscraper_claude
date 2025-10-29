@@ -24,32 +24,42 @@ Click: **Extensions** → **Apps Script**
 ### 5. Use It!
 1. Close Apps Script tab
 2. Refresh your Google Sheet
-3. Click **Polymarket** menu → **Fetch Copa Libertadores**
+3. Click **Polymarket** menu → **Structured Format** → Choose a category (e.g., **Sports**)
 
-Done! Your Copa Libertadores data will appear in the sheet.
+Done! Your data will appear in the sheet in structured format.
 
 ---
 
 ## Common Commands
 
-### Fetch Copa Libertadores Markets
+### Fetch Markets by Category (Structured Format)
 ```
-Menu: Polymarket → Fetch Copa Libertadores
+Menu: Polymarket → Structured Format (Recommended) → [Choose Category]
+
+Available Categories:
+- All Markets
+- Politics
+- Sports
+- Finance
+- Crypto
+- Geopolitics
+- Earnings
+- Tech
+- Culture
+- World
+- Economy
+- Elections
+- Mentions
 ```
 
 ### Fetch All Active Markets
 ```
-Menu: Polymarket → Fetch Markets
+Menu: Polymarket → Structured Format → All Markets
 ```
 
 ### See Available Categories
 ```
 Menu: Polymarket → Show Available Tags
-```
-
-### Refresh Data
-```
-Menu: Polymarket → Refresh Data
 ```
 
 ---
