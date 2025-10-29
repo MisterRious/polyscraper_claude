@@ -220,26 +220,43 @@ function displayMarketsStructured(sheet, markets) {
   markets.forEach((market, index) => {
     try {
       // Extract categories from tags
-      let category = 'Sports';
-      let subCategory1 = 'Soccer';
+      let category = '';
+      let subCategory1 = '';
       let subCategory2 = '';
 
-      if (market.tags && Array.isArray(market.tags)) {
-        market.tags.forEach(tag => {
-          const tagLabel = (typeof tag === 'object' ? tag.label || tag.tag || tag.name : tag) || '';
-          const tagLower = tagLabel.toLowerCase();
-
-          if (tagLower.includes('copa libertadores')) {
-            subCategory2 = 'Copa Libertadores';
-          } else if (tagLower.includes('soccer') || tagLower.includes('football')) {
-            subCategory1 = 'Soccer';
-          } else if (tagLower.includes('sports')) {
-            category = 'Sports';
-          } else if (!subCategory2 && tagLabel && tagLabel !== 'Sports' && tagLabel !== 'Soccer') {
-            // Use other tags as subcategory2 if not already set
-            subCategory2 = tagLabel;
+      if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
+        // Extract tag labels
+        const tagLabels = market.tags.map(tag => {
+          if (typeof tag === 'object') {
+            return tag.label || tag.tag || tag.name || '';
           }
-        });
+          return tag || '';
+        }).filter(t => t !== ''); // Remove empty tags
+
+        // Assign tags to categories in order
+        if (tagLabels.length > 0) {
+          category = tagLabels[0]; // First tag = Category
+        }
+        if (tagLabels.length > 1) {
+          subCategory1 = tagLabels[1]; // Second tag = SubCategory1
+        }
+        if (tagLabels.length > 2) {
+          subCategory2 = tagLabels[2]; // Third tag = SubCategory2
+        }
+      }
+
+      // If no tags, try to infer from question/description
+      if (!category) {
+        const question = (market.question || '').toLowerCase();
+        if (question.includes('copa libertadores') || question.includes('soccer') || question.includes('football')) {
+          category = 'Sports';
+          subCategory1 = 'Soccer';
+          if (question.includes('copa libertadores')) {
+            subCategory2 = 'Copa Libertadores';
+          }
+        } else {
+          category = 'Markets'; // Generic fallback
+        }
       }
 
       // Extract listing (match name, team abbreviations)
@@ -722,10 +739,11 @@ function fetchCopaLibertadoresStructured() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
   // Search for markets with "Copa Libertadores" in the question
+  // Fetch more initially to ensure we get enough after filtering
   const allMarkets = getMarkets({
     closed: false,
     active: true,
-    limit: 1000 // Fetch more to increase chances of finding Copa Libertadores
+    limit: 500
   });
 
   // Filter for Copa Libertadores
@@ -781,7 +799,7 @@ function fetchMarketsStructured() {
 
   // Get parameters from sheet (you can set these in specific cells)
   const tagId = sheet.getRange('A1').getValue(); // Tag ID from cell A1
-  const limit = 100; // Number of markets to fetch
+  const limit = 500; // Number of markets to fetch
 
   // Fetch markets
   const markets = getMarkets({
@@ -900,10 +918,20 @@ function testMarketFetch() {
   Logger.log('Received markets: ' + JSON.stringify(markets));
 
   if (Array.isArray(markets) && markets.length > 0) {
+    // Log tags for debugging
+    Logger.log('First market tags: ' + JSON.stringify(markets[0].tags));
+
+    const tags = markets[0].tags || [];
+    const tagsList = tags.map(t => {
+      if (typeof t === 'object') return t.label || t.tag || t.name || '';
+      return t;
+    }).join(', ');
+
     const summary = `Fetched ${markets.length} markets\n\n` +
                    `First market:\n` +
                    `Question: ${markets[0].question}\n` +
                    `Slug: ${markets[0].slug}\n` +
+                   `Tags: ${tagsList}\n` +
                    `Volume: ${markets[0].volume || markets[0].volumeNum}\n` +
                    `OutcomePrices: ${JSON.stringify(markets[0].outcomePrices)}`;
     SpreadsheetApp.getUi().alert(summary);
