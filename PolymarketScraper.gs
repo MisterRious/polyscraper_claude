@@ -169,6 +169,331 @@ function getTags() {
 }
 
 /**
+ * Display market data in structured format (Category, SubCategory, etc.)
+ * This format creates one row per outcome
+ *
+ * @param {Sheet} sheet - The sheet to write to
+ * @param {Array} markets - Array of market objects
+ */
+function displayMarketsStructured(sheet, markets) {
+  // Clear existing data
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clear();
+  }
+
+  // Set headers
+  const headers = [
+    'Category',
+    'SubCategory1',
+    'SubCategory2',
+    'Listing',
+    'Date',
+    'Time',
+    'Timezone',
+    'Moneyline',
+    'Outcome',
+    'Price'
+  ];
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold')
+    .setBackground('#4285f4')
+    .setFontColor('white');
+
+  // Check if markets is an array
+  if (!Array.isArray(markets)) {
+    Logger.log('Markets is not an array: ' + typeof markets);
+    SpreadsheetApp.getUi().alert('No markets found or invalid response format');
+    return;
+  }
+
+  if (markets.length === 0) {
+    SpreadsheetApp.getUi().alert('No markets found with the specified filters');
+    return;
+  }
+
+  Logger.log('Processing ' + markets.length + ' markets in structured format');
+
+  const allRows = [];
+
+  markets.forEach((market, index) => {
+    try {
+      // Extract categories from tags
+      let category = 'Sports';
+      let subCategory1 = 'Soccer';
+      let subCategory2 = '';
+
+      if (market.tags && Array.isArray(market.tags)) {
+        market.tags.forEach(tag => {
+          const tagLabel = (typeof tag === 'object' ? tag.label || tag.tag || tag.name : tag) || '';
+          const tagLower = tagLabel.toLowerCase();
+
+          if (tagLower.includes('copa libertadores')) {
+            subCategory2 = 'Copa Libertadores';
+          } else if (tagLower.includes('soccer') || tagLower.includes('football')) {
+            subCategory1 = 'Soccer';
+          } else if (tagLower.includes('sports')) {
+            category = 'Sports';
+          } else if (!subCategory2 && tagLabel && tagLabel !== 'Sports' && tagLabel !== 'Soccer') {
+            // Use other tags as subcategory2 if not already set
+            subCategory2 = tagLabel;
+          }
+        });
+      }
+
+      // Extract listing (match name, team abbreviations)
+      let listing = market.question || '';
+      listing = extractMatchListing(listing);
+
+      // Get date and time
+      let eventDate = '';
+      let eventTime = '';
+      let timezone = 'America/Toronto';
+
+      if (market.endDateIso || market.endDate) {
+        const dateStr = market.endDateIso || market.endDate;
+        const date = new Date(dateStr);
+
+        // Convert to Toronto timezone
+        const torontoTime = convertToTimezone(date, timezone);
+
+        eventDate = formatDate(torontoTime); // YYYY-MM-DD
+        eventTime = formatTime(torontoTime); // HH:MM
+      }
+
+      // Parse outcomes and prices
+      let outcomes = [];
+      let prices = [];
+
+      if (market.outcomes && Array.isArray(market.outcomes)) {
+        outcomes = market.outcomes;
+      }
+
+      if (market.outcomePrices && Array.isArray(market.outcomePrices)) {
+        prices = market.outcomePrices.map(p => Math.round(parseFloat(p) * 100));
+      }
+
+      // Determine market type and create rows
+      const marketRows = createMarketRows(
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        eventDate,
+        eventTime,
+        timezone,
+        outcomes,
+        prices,
+        market.question
+      );
+
+      allRows.push(...marketRows);
+
+    } catch (err) {
+      Logger.log('Error processing market ' + index + ': ' + err);
+      Logger.log('Market data: ' + JSON.stringify(market));
+    }
+  });
+
+  if (allRows.length > 0) {
+    sheet.getRange(2, 1, allRows.length, headers.length).setValues(allRows);
+    sheet.autoResizeColumns(1, headers.length);
+    SpreadsheetApp.getUi().alert(`Successfully formatted ${allRows.length} rows from ${markets.length} markets!`);
+  } else {
+    SpreadsheetApp.getUi().alert('No data to display');
+  }
+}
+
+/**
+ * Extract match listing from question (e.g., "RAC vs FLA")
+ */
+function extractMatchListing(question) {
+  if (!question) return '';
+
+  // Look for patterns like "Team1 vs Team2" or "Team1 to beat Team2"
+  // Extract team abbreviations or names
+
+  // Try to find "vs" pattern
+  let vsMatch = question.match(/([A-Z]{3})\s+vs\.?\s+([A-Z]{3})/i);
+  if (vsMatch) {
+    return `${vsMatch[1].toUpperCase()} vs ${vsMatch[2].toUpperCase()}`;
+  }
+
+  // Try to find team names
+  vsMatch = question.match(/(\w+)\s+vs\.?\s+(\w+)/i);
+  if (vsMatch) {
+    return `${vsMatch[1]} vs ${vsMatch[2]}`;
+  }
+
+  // Try other patterns like "Team1 to beat Team2"
+  const beatMatch = question.match(/(\w+)\s+to\s+beat\s+(\w+)/i);
+  if (beatMatch) {
+    return `${beatMatch[1]} vs ${beatMatch[2]}`;
+  }
+
+  // Return cleaned question if no pattern found
+  return question.substring(0, 50);
+}
+
+/**
+ * Create rows for a market based on outcomes
+ * For soccer matches with 3 outcomes (Team1, Draw, Team2), creates 6 rows (each outcome has YES/NO)
+ */
+function createMarketRows(category, subCategory1, subCategory2, listing, date, time, timezone, outcomes, prices, question) {
+  const rows = [];
+
+  // Detect market type
+  const isDrawMarket = outcomes.some(o => o && o.toLowerCase().includes('draw'));
+  const isBinaryMarket = outcomes.length === 2 && (
+    outcomes.some(o => o && o.toLowerCase() === 'yes') ||
+    outcomes.some(o => o && o.toLowerCase() === 'no')
+  );
+
+  if (isDrawMarket || outcomes.length === 3) {
+    // Soccer match with Draw (3-way market)
+    // Each outcome gets YES/NO rows
+    outcomes.forEach((outcome, idx) => {
+      const price = prices[idx] || 0;
+      const inversePrice = 100 - price;
+
+      // Determine moneyline label
+      let moneyline = outcome;
+      if (outcome && outcome.toLowerCase().includes('draw')) {
+        moneyline = 'DRAW';
+      }
+
+      // YES row
+      rows.push([
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        date,
+        time,
+        timezone,
+        moneyline,
+        'YES',
+        price
+      ]);
+
+      // NO row
+      rows.push([
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        date,
+        time,
+        timezone,
+        moneyline,
+        'NO',
+        inversePrice
+      ]);
+    });
+  } else if (isBinaryMarket) {
+    // Binary Yes/No market
+    outcomes.forEach((outcome, idx) => {
+      const price = prices[idx] || 0;
+
+      rows.push([
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        date,
+        time,
+        timezone,
+        outcome,
+        'YES',
+        price
+      ]);
+    });
+  } else {
+    // Multi-outcome market (not draw-based)
+    // Create YES/NO rows for each outcome
+    outcomes.forEach((outcome, idx) => {
+      const price = prices[idx] || 0;
+      const inversePrice = 100 - price;
+
+      rows.push([
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        date,
+        time,
+        timezone,
+        outcome,
+        'YES',
+        price
+      ]);
+
+      rows.push([
+        category,
+        subCategory1,
+        subCategory2,
+        listing,
+        date,
+        time,
+        timezone,
+        outcome,
+        'NO',
+        inversePrice
+      ]);
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Convert date to specific timezone
+ */
+function convertToTimezone(date, timezone) {
+  // Google Apps Script doesn't have full timezone support
+  // We'll use a simplified approach
+
+  // Get UTC time
+  const utcTime = date.getTime();
+
+  // Toronto is typically UTC-5 (EST) or UTC-4 (EDT)
+  // We'll use a simple offset for now
+  // Note: This doesn't account for DST transitions perfectly
+
+  if (timezone === 'America/Toronto') {
+    // Check if DST is in effect (rough approximation)
+    const month = date.getUTCMonth();
+    const isDST = month >= 2 && month <= 10; // Mar-Nov roughly
+    const offset = isDST ? -4 : -5; // hours
+
+    const torontoTime = new Date(utcTime + offset * 60 * 60 * 1000);
+    return torontoTime;
+  }
+
+  return date;
+}
+
+/**
+ * Format date as YYYY-MM-DD
+ */
+function formatDate(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Format time as HH:MM (24-hour)
+ */
+function formatTime(date) {
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
  * Display tags in a sheet
  */
 function displayTags() {
@@ -391,16 +716,12 @@ function displayMarkets(sheet, markets) {
 }
 
 /**
- * Fetch Copa Libertadores markets specifically
- * Note: You'll need to find the correct tag ID for Copa Libertadores
+ * Fetch Copa Libertadores markets in structured format
  */
-function fetchCopaLibertadores() {
+function fetchCopaLibertadoresStructured() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
   // Search for markets with "Copa Libertadores" in the question
-  // Since we don't have the exact tag ID, we'll fetch all soccer markets
-  // and filter manually
-
   const allMarkets = getMarkets({
     closed: false,
     active: true,
@@ -411,14 +732,67 @@ function fetchCopaLibertadores() {
   const copaMarkets = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
     const description = (market.description || '').toLowerCase();
-    const tags = (market.tags || []).map(t => (t.label || t).toLowerCase());
+    const tags = (market.tags || []).map(t => {
+      if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+      return (t || '').toLowerCase();
+    });
 
     return question.includes('copa libertadores') ||
            description.includes('copa libertadores') ||
-           tags.some(tag => tag.includes('copa libertadores'));
+           tags.some(tag => tag.includes('copa libertadores') || tag.includes('libertadores'));
+  });
+
+  displayMarketsStructured(sheet, copaMarkets);
+}
+
+/**
+ * Fetch Copa Libertadores markets in original format (for backward compatibility)
+ */
+function fetchCopaLibertadores() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  const allMarkets = getMarkets({
+    closed: false,
+    active: true,
+    limit: 1000
+  });
+
+  const copaMarkets = allMarkets.filter(market => {
+    const question = (market.question || '').toLowerCase();
+    const description = (market.description || '').toLowerCase();
+    const tags = (market.tags || []).map(t => {
+      if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+      return (t || '').toLowerCase();
+    });
+
+    return question.includes('copa libertadores') ||
+           description.includes('copa libertadores') ||
+           tags.some(tag => tag.includes('copa libertadores') || tag.includes('libertadores'));
   });
 
   displayMarkets(sheet, copaMarkets);
+}
+
+/**
+ * Fetch all markets in structured format
+ */
+function fetchMarketsStructured() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  // Get parameters from sheet (you can set these in specific cells)
+  const tagId = sheet.getRange('A1').getValue(); // Tag ID from cell A1
+  const limit = 100; // Number of markets to fetch
+
+  // Fetch markets
+  const markets = getMarkets({
+    tag: tagId || null,
+    closed: false,
+    active: true,
+    limit: limit
+  });
+
+  // Display data in structured format
+  displayMarketsStructured(sheet, markets);
 }
 
 /**
@@ -451,11 +825,14 @@ function fetchMarketsByKeyword(keyword) {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Polymarket')
-    .addItem('Fetch Markets', 'fetchPolymarketData')
-    .addItem('Fetch Copa Libertadores', 'fetchCopaLibertadores')
-    .addItem('Show Available Tags', 'displayTags')
+    .addSubMenu(ui.createMenu('Structured Format (Recommended)')
+      .addItem('📊 Copa Libertadores (Structured)', 'fetchCopaLibertadoresStructured')
+      .addItem('📊 All Markets (Structured)', 'fetchMarketsStructured'))
+    .addSubMenu(ui.createMenu('Original Format')
+      .addItem('Fetch Markets', 'fetchPolymarketData')
+      .addItem('Fetch Copa Libertadores', 'fetchCopaLibertadores'))
     .addSeparator()
-    .addItem('Refresh Data', 'fetchPolymarketData')
+    .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
     .addItem('🔧 Test Market Fetch', 'testMarketFetch')
     .addItem('🔍 Debug API Response', 'debugMarketResponse')
