@@ -1032,12 +1032,48 @@ function onOpen() {
     .addSeparator()
     .addItem('🔧 Test Market Fetch', 'testMarketFetch')
     .addItem('🔍 Debug API Response', 'debugMarketResponse')
+    .addItem('📋 Show All Tags', 'showAllTags')
     .addToUi();
 }
 
 // ============================================
 // DEBUG FUNCTIONS
 // ============================================
+
+/**
+ * Debug function - shows all unique tags from fetched markets
+ * Run this to see what tag names Polymarket actually uses
+ */
+function showAllTags() {
+  const allMarkets = getMarkets({
+    closed: false,
+    active: true,
+    limit: 500
+  });
+
+  const allTags = new Set();
+
+  allMarkets.forEach(market => {
+    if (market.tags && Array.isArray(market.tags)) {
+      market.tags.forEach(tag => {
+        const tagLabel = typeof tag === 'object' ? (tag.label || tag.tag || tag.name) : tag;
+        if (tagLabel) {
+          allTags.add(tagLabel);
+        }
+      });
+    }
+  });
+
+  const sortedTags = Array.from(allTags).sort();
+
+  Logger.log('=== ALL TAGS FOUND IN MARKETS ===');
+  Logger.log(`Total unique tags: ${sortedTags.length}`);
+  sortedTags.forEach(tag => Logger.log(`  - ${tag}`));
+
+  const message = `Found ${sortedTags.length} unique tags:\n\n${sortedTags.slice(0, 50).join('\n')}\n\n${sortedTags.length > 50 ? `... and ${sortedTags.length - 50} more` : ''}\n\nSee full list in View → Logs`;
+
+  SpreadsheetApp.getUi().alert(message);
+}
 
 /**
  * Debug function - fetches one market and logs the full response
