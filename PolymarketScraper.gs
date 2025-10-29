@@ -75,11 +75,41 @@ function getMarkets(options = {}) {
   const url = `${POLYMARKET_API_BASE}/markets?${params.join('&')}`;
 
   try {
+    Logger.log('Fetching URL: ' + url);
     const response = UrlFetchApp.fetch(url);
     const data = JSON.parse(response.getContentText());
+
+    Logger.log('Received ' + (Array.isArray(data) ? data.length : 0) + ' markets');
+
+    // Parse stringified JSON fields
+    if (Array.isArray(data)) {
+      data.forEach(market => {
+        // Parse outcomePrices if it's a string
+        if (market.outcomePrices && typeof market.outcomePrices === 'string') {
+          try {
+            market.outcomePrices = JSON.parse(market.outcomePrices);
+          } catch (e) {
+            Logger.log('Error parsing outcomePrices: ' + e);
+            market.outcomePrices = [];
+          }
+        }
+
+        // Parse clobTokenIds if it's a string
+        if (market.clobTokenIds && typeof market.clobTokenIds === 'string') {
+          try {
+            market.clobTokenIds = JSON.parse(market.clobTokenIds);
+          } catch (e) {
+            Logger.log('Error parsing clobTokenIds: ' + e);
+            market.clobTokenIds = [];
+          }
+        }
+      });
+    }
+
     return data;
   } catch (error) {
     Logger.log('Error fetching markets: ' + error);
+    Logger.log('Error stack: ' + error.stack);
     SpreadsheetApp.getUi().alert('Error fetching data: ' + error.message);
     return [];
   }
@@ -184,7 +214,8 @@ function displayMarkets(sheet, markets) {
 
   // Check if markets is an array
   if (!Array.isArray(markets)) {
-    Logger.log('Markets is not an array:', markets);
+    Logger.log('Markets is not an array: ' + typeof markets);
+    Logger.log('Markets value: ' + JSON.stringify(markets));
     SpreadsheetApp.getUi().alert('No markets found or invalid response format');
     return;
   }
@@ -194,44 +225,86 @@ function displayMarkets(sheet, markets) {
     return;
   }
 
+  Logger.log('Processing ' + markets.length + ' markets');
+
+  // Log first market for debugging
+  if (markets.length > 0) {
+    Logger.log('Sample market: ' + JSON.stringify(markets[0]));
+  }
+
   // Populate data
-  const rows = markets.map(market => {
-    const outcomes = market.outcomes || market.tokens || [];
-    const outcomesText = outcomes.map(o => o.outcome || o).join(', ');
+  const rows = markets.map((market, index) => {
+    try {
+      // Extract outcomes - they might be in different formats
+      let outcomesText = 'Yes, No'; // Default for binary markets
+      if (market.outcomes && Array.isArray(market.outcomes)) {
+        outcomesText = market.outcomes.join(', ');
+      } else if (market.tokens && Array.isArray(market.tokens)) {
+        outcomesText = market.tokens.map(t => t.outcome || t).join(', ');
+      }
 
-    // Get current prices (probabilities)
-    const prices = market.outcomePrices || [];
-    const pricesText = prices.map(p => `${(p * 100).toFixed(1)}%`).join(', ');
+      // Get current prices (probabilities)
+      let pricesText = '';
+      if (market.outcomePrices && Array.isArray(market.outcomePrices)) {
+        pricesText = market.outcomePrices.map(p => {
+          const price = parseFloat(p);
+          return isNaN(price) ? p : `${(price * 100).toFixed(1)}%`;
+        }).join(', ');
+      }
 
-    // Get tags
-    const tags = market.tags || [];
-    const tagsText = tags.map(t => t.label || t).join(', ');
+      // Get tags
+      const tags = market.tags || [];
+      const tagsText = tags.map(t => {
+        if (typeof t === 'object') return t.label || t.tag || t.name || '';
+        return t;
+      }).join(', ');
 
-    // Format dates
-    const startDate = market.startDate ? new Date(market.startDate) : '';
-    const endDate = market.endDate ? new Date(market.endDate) : '';
+      // Format dates - try both ISO and regular date fields
+      let startDate = '';
+      if (market.startDateIso) {
+        startDate = new Date(market.startDateIso);
+      } else if (market.startDate) {
+        startDate = new Date(market.startDate);
+      }
 
-    // Determine status
-    let status = 'Active';
-    if (market.closed) status = 'Closed';
-    else if (market.archived) status = 'Archived';
-    else if (!market.active) status = 'Inactive';
+      let endDate = '';
+      if (market.endDateIso) {
+        endDate = new Date(market.endDateIso);
+      } else if (market.endDate) {
+        endDate = new Date(market.endDate);
+      }
 
-    return [
-      market.question || market.title || '',
-      market.description || '',
-      market.slug || '',
-      outcomesText,
-      pricesText,
-      market.volume || 0,
-      market.liquidity || 0,
-      startDate,
-      endDate,
-      status,
-      tagsText,
-      market.id || market.market_id || '',
-      market.conditionId || market.condition_id || ''
-    ];
+      // Determine status
+      let status = 'Active';
+      if (market.closed) status = 'Closed';
+      else if (market.archived) status = 'Archived';
+      else if (market.active === false) status = 'Inactive';
+
+      // Use volumeNum/liquidityNum if available, fallback to volume/liquidity
+      const volume = market.volumeNum || market.volume || 0;
+      const liquidity = market.liquidityNum || market.liquidity || 0;
+
+      return [
+        market.question || '',
+        market.description || '',
+        market.slug || '',
+        outcomesText,
+        pricesText,
+        parseFloat(volume) || 0,
+        parseFloat(liquidity) || 0,
+        startDate,
+        endDate,
+        status,
+        tagsText,
+        market.id || '',
+        market.conditionId || ''
+      ];
+    } catch (err) {
+      Logger.log('Error processing market ' + index + ': ' + err);
+      Logger.log('Market data: ' + JSON.stringify(market));
+      // Return empty row on error
+      return ['Error', '', '', '', '', 0, 0, '', '', '', '', '', ''];
+    }
   });
 
   sheet.getRange(4, 1, rows.length, headers.length).setValues(rows);
@@ -323,7 +396,83 @@ function onOpen() {
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
     .addItem('Refresh Data', 'fetchPolymarketData')
+    .addSeparator()
+    .addItem('🔧 Test Market Fetch', 'testMarketFetch')
+    .addItem('🔍 Debug API Response', 'debugMarketResponse')
     .addToUi();
+}
+
+// ============================================
+// DEBUG FUNCTIONS
+// ============================================
+
+/**
+ * Debug function - fetches one market and logs the full response
+ * Use this to see what fields are actually available
+ * Run this from Apps Script editor and check View -> Logs
+ */
+function debugMarketResponse() {
+  const url = `${POLYMARKET_API_BASE}/markets?limit=1&active=true`;
+
+  try {
+    Logger.log('Fetching: ' + url);
+    const response = UrlFetchApp.fetch(url);
+    const text = response.getContentText();
+
+    Logger.log('Raw response: ' + text);
+
+    const data = JSON.parse(text);
+    Logger.log('Parsed data type: ' + typeof data);
+    Logger.log('Is array: ' + Array.isArray(data));
+
+    if (Array.isArray(data) && data.length > 0) {
+      Logger.log('Number of markets: ' + data.length);
+      Logger.log('First market keys: ' + Object.keys(data[0]).join(', '));
+      Logger.log('First market full data: ' + JSON.stringify(data[0], null, 2));
+
+      // Check specific fields
+      Logger.log('Question: ' + data[0].question);
+      Logger.log('outcomePrices type: ' + typeof data[0].outcomePrices);
+      Logger.log('outcomePrices value: ' + data[0].outcomePrices);
+      Logger.log('Volume: ' + data[0].volume);
+      Logger.log('VolumeNum: ' + data[0].volumeNum);
+    }
+
+    SpreadsheetApp.getUi().alert('Debug info logged. Check View -> Logs in Apps Script editor');
+  } catch (error) {
+    Logger.log('Error: ' + error);
+    Logger.log('Stack: ' + error.stack);
+    SpreadsheetApp.getUi().alert('Error: ' + error.message);
+  }
+}
+
+/**
+ * Test function - fetches markets and displays detailed info
+ */
+function testMarketFetch() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  Logger.log('Testing market fetch...');
+
+  const markets = getMarkets({
+    active: true,
+    closed: false,
+    limit: 5
+  });
+
+  Logger.log('Received markets: ' + JSON.stringify(markets));
+
+  if (Array.isArray(markets) && markets.length > 0) {
+    const summary = `Fetched ${markets.length} markets\n\n` +
+                   `First market:\n` +
+                   `Question: ${markets[0].question}\n` +
+                   `Slug: ${markets[0].slug}\n` +
+                   `Volume: ${markets[0].volume || markets[0].volumeNum}\n` +
+                   `OutcomePrices: ${JSON.stringify(markets[0].outcomePrices)}`;
+    SpreadsheetApp.getUi().alert(summary);
+  } else {
+    SpreadsheetApp.getUi().alert('No markets received or invalid format');
+  }
 }
 
 // ============================================
