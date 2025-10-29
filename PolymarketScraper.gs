@@ -215,9 +215,18 @@ function displayMarketsStructured(sheet, markets) {
 
   Logger.log('Processing ' + markets.length + ' markets in structured format');
 
+  // Filter out invalid markets before processing
+  const validMarkets = filterValidMarkets(markets);
+  Logger.log('After filtering: ' + validMarkets.length + ' valid markets');
+
+  if (validMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert('No valid active markets found after filtering');
+    return;
+  }
+
   const allRows = [];
 
-  markets.forEach((market, index) => {
+  validMarkets.forEach((market, index) => {
     try {
       // Extract categories from tags
       let category = '';
@@ -316,10 +325,78 @@ function displayMarketsStructured(sheet, markets) {
   if (allRows.length > 0) {
     sheet.getRange(2, 1, allRows.length, headers.length).setValues(allRows);
     sheet.autoResizeColumns(1, headers.length);
-    SpreadsheetApp.getUi().alert(`Successfully formatted ${allRows.length} rows from ${markets.length} markets!`);
+
+    // Add summary with filtering info
+    const timestamp = new Date().toLocaleString();
+    const summary = `Last updated: ${timestamp} | ${allRows.length} rows from ${validMarkets.length} valid markets (filtered from ${markets.length} total)`;
+
+    // Add timestamp in a merged cell above the data
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, headers.length).merge().setValue(summary);
+    sheet.getRange(1, 1).setFontSize(10).setFontColor('#666666');
+
+    SpreadsheetApp.getUi().alert(`Successfully formatted ${allRows.length} rows from ${validMarkets.length} valid markets!\n\nFiltered out ${markets.length - validMarkets.length} closed/invalid markets.`);
   } else {
     SpreadsheetApp.getUi().alert('No data to display');
   }
+}
+
+/**
+ * Filter markets to only include valid, active, and future markets
+ * Excludes: closed, archived, resolved, and past-dated markets
+ *
+ * @param {Array} markets - Array of market objects
+ * @returns {Array} Filtered array of valid markets
+ */
+function filterValidMarkets(markets) {
+  const now = new Date();
+
+  return markets.filter(market => {
+    try {
+      // Check 1: Market must be active
+      if (market.active === false) {
+        Logger.log(`Filtered out (inactive): ${market.question}`);
+        return false;
+      }
+
+      // Check 2: Market must not be closed
+      if (market.closed === true) {
+        Logger.log(`Filtered out (closed): ${market.question}`);
+        return false;
+      }
+
+      // Check 3: Market must not be archived
+      if (market.archived === true) {
+        Logger.log(`Filtered out (archived): ${market.question}`);
+        return false;
+      }
+
+      // Check 4: End date must be in the future
+      if (market.endDateIso || market.endDate) {
+        const endDateStr = market.endDateIso || market.endDate;
+        const endDate = new Date(endDateStr);
+
+        if (endDate < now) {
+          Logger.log(`Filtered out (past date ${endDateStr}): ${market.question}`);
+          return false;
+        }
+      }
+
+      // Check 5: If acceptingOrders field exists, it should be true
+      if (market.acceptingOrders !== undefined && market.acceptingOrders === false) {
+        Logger.log(`Filtered out (not accepting orders): ${market.question}`);
+        return false;
+      }
+
+      // Market passed all checks
+      return true;
+
+    } catch (err) {
+      Logger.log('Error filtering market: ' + err);
+      // If there's an error checking, exclude it to be safe
+      return false;
+    }
+  });
 }
 
 /**
@@ -589,13 +666,22 @@ function displayMarkets(sheet, markets) {
 
   Logger.log('Processing ' + markets.length + ' markets');
 
+  // Filter out invalid markets
+  const validMarkets = filterValidMarkets(markets);
+  Logger.log('After filtering: ' + validMarkets.length + ' valid markets');
+
+  if (validMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert('No valid active markets found after filtering');
+    return;
+  }
+
   // Log first market for debugging
-  if (markets.length > 0) {
-    Logger.log('Sample market: ' + JSON.stringify(markets[0]));
+  if (validMarkets.length > 0) {
+    Logger.log('Sample market: ' + JSON.stringify(validMarkets[0]));
   }
 
   // Populate data
-  const rows = markets.map((market, index) => {
+  const rows = validMarkets.map((market, index) => {
     try {
       // Extract outcomes - they might be in different formats
       let outcomesText = 'Yes, No'; // Default for binary markets
@@ -726,10 +812,11 @@ function displayMarkets(sheet, markets) {
   sheet.getRange(4, startDateCol, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm');
   sheet.getRange(4, endDateCol, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm');
 
-  // Add timestamp
-  sheet.getRange(1, 1).setValue(`Last updated: ${new Date().toLocaleString()}`);
+  // Add timestamp with filtering info
+  const timestamp = `Last updated: ${new Date().toLocaleString()} | ${validMarkets.length} valid markets (filtered from ${markets.length} total)`;
+  sheet.getRange(1, 1).setValue(timestamp);
 
-  SpreadsheetApp.getUi().alert(`Successfully fetched ${markets.length} markets!`);
+  SpreadsheetApp.getUi().alert(`Successfully fetched ${validMarkets.length} valid markets!\n\nFiltered out ${markets.length - validMarkets.length} closed/invalid markets.`);
 }
 
 /**
