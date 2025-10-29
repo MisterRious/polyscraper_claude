@@ -820,21 +820,20 @@ function displayMarkets(sheet, markets) {
 }
 
 /**
- * Fetch Copa Libertadores markets in structured format
+ * Generic function to fetch markets by category (structured format)
+ * @param {string} category - The category name to filter by
  */
-function fetchCopaLibertadoresStructured() {
+function fetchCategoryStructured(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
-  // Search for markets with "Copa Libertadores" in the question
-  // Fetch more initially to ensure we get enough after filtering
   const allMarkets = getMarkets({
     closed: false,
     active: true,
     limit: 500
   });
 
-  // Filter for Copa Libertadores
-  const copaMarkets = allMarkets.filter(market => {
+  // Filter for category
+  const categoryMarkets = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
     const description = (market.description || '').toLowerCase();
     const tags = (market.tags || []).map(t => {
@@ -842,27 +841,30 @@ function fetchCopaLibertadoresStructured() {
       return (t || '').toLowerCase();
     });
 
-    return question.includes('copa libertadores') ||
-           description.includes('copa libertadores') ||
-           tags.some(tag => tag.includes('copa libertadores') || tag.includes('libertadores'));
+    const categoryLower = category.toLowerCase();
+
+    return question.includes(categoryLower) ||
+           description.includes(categoryLower) ||
+           tags.some(tag => tag.includes(categoryLower));
   });
 
-  displayMarketsStructured(sheet, copaMarkets);
+  displayMarketsStructured(sheet, categoryMarkets);
 }
 
 /**
- * Fetch Copa Libertadores markets in original format (for backward compatibility)
+ * Generic function to fetch markets by category (original format)
+ * @param {string} category - The category name to filter by
  */
-function fetchCopaLibertadores() {
+function fetchCategoryOriginal(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
   const allMarkets = getMarkets({
     closed: false,
     active: true,
-    limit: 1000
+    limit: 500
   });
 
-  const copaMarkets = allMarkets.filter(market => {
+  const categoryMarkets = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
     const description = (market.description || '').toLowerCase();
     const tags = (market.tags || []).map(t => {
@@ -870,13 +872,43 @@ function fetchCopaLibertadores() {
       return (t || '').toLowerCase();
     });
 
-    return question.includes('copa libertadores') ||
-           description.includes('copa libertadores') ||
-           tags.some(tag => tag.includes('copa libertadores') || tag.includes('libertadores'));
+    const categoryLower = category.toLowerCase();
+
+    return question.includes(categoryLower) ||
+           description.includes(categoryLower) ||
+           tags.some(tag => tag.includes(categoryLower));
   });
 
-  displayMarkets(sheet, copaMarkets);
+  displayMarkets(sheet, categoryMarkets);
 }
+
+// Specific category functions - Structured Format
+function fetchPoliticsStructured() { fetchCategoryStructured('Politics'); }
+function fetchSportsStructured() { fetchCategoryStructured('Sports'); }
+function fetchFinanceStructured() { fetchCategoryStructured('Finance'); }
+function fetchCryptoStructured() { fetchCategoryStructured('Crypto'); }
+function fetchGeopoliticsStructured() { fetchCategoryStructured('Geopolitics'); }
+function fetchEarningsStructured() { fetchCategoryStructured('Earnings'); }
+function fetchTechStructured() { fetchCategoryStructured('Tech'); }
+function fetchCultureStructured() { fetchCategoryStructured('Culture'); }
+function fetchWorldStructured() { fetchCategoryStructured('World'); }
+function fetchEconomyStructured() { fetchCategoryStructured('Economy'); }
+function fetchElectionsStructured() { fetchCategoryStructured('Elections'); }
+function fetchMentionsStructured() { fetchCategoryStructured('Mentions'); }
+
+// Specific category functions - Original Format
+function fetchPoliticsOriginal() { fetchCategoryOriginal('Politics'); }
+function fetchSportsOriginal() { fetchCategoryOriginal('Sports'); }
+function fetchFinanceOriginal() { fetchCategoryOriginal('Finance'); }
+function fetchCryptoOriginal() { fetchCategoryOriginal('Crypto'); }
+function fetchGeopoliticsOriginal() { fetchCategoryOriginal('Geopolitics'); }
+function fetchEarningsOriginal() { fetchCategoryOriginal('Earnings'); }
+function fetchTechOriginal() { fetchCategoryOriginal('Tech'); }
+function fetchCultureOriginal() { fetchCategoryOriginal('Culture'); }
+function fetchWorldOriginal() { fetchCategoryOriginal('World'); }
+function fetchEconomyOriginal() { fetchCategoryOriginal('Economy'); }
+function fetchElectionsOriginal() { fetchCategoryOriginal('Elections'); }
+function fetchMentionsOriginal() { fetchCategoryOriginal('Mentions'); }
 
 /**
  * Fetch all markets in structured format
@@ -931,11 +963,35 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Polymarket')
     .addSubMenu(ui.createMenu('Structured Format (Recommended)')
-      .addItem('📊 Copa Libertadores (Structured)', 'fetchCopaLibertadoresStructured')
-      .addItem('📊 All Markets (Structured)', 'fetchMarketsStructured'))
+      .addItem('📊 All Markets', 'fetchMarketsStructured')
+      .addSeparator()
+      .addItem('Politics', 'fetchPoliticsStructured')
+      .addItem('Sports', 'fetchSportsStructured')
+      .addItem('Finance', 'fetchFinanceStructured')
+      .addItem('Crypto', 'fetchCryptoStructured')
+      .addItem('Geopolitics', 'fetchGeopoliticsStructured')
+      .addItem('Earnings', 'fetchEarningsStructured')
+      .addItem('Tech', 'fetchTechStructured')
+      .addItem('Culture', 'fetchCultureStructured')
+      .addItem('World', 'fetchWorldStructured')
+      .addItem('Economy', 'fetchEconomyStructured')
+      .addItem('Elections', 'fetchElectionsStructured')
+      .addItem('Mentions', 'fetchMentionsStructured'))
     .addSubMenu(ui.createMenu('Original Format')
-      .addItem('Fetch Markets', 'fetchPolymarketData')
-      .addItem('Fetch Copa Libertadores', 'fetchCopaLibertadores'))
+      .addItem('All Markets', 'fetchPolymarketData')
+      .addSeparator()
+      .addItem('Politics', 'fetchPoliticsOriginal')
+      .addItem('Sports', 'fetchSportsOriginal')
+      .addItem('Finance', 'fetchFinanceOriginal')
+      .addItem('Crypto', 'fetchCryptoOriginal')
+      .addItem('Geopolitics', 'fetchGeopoliticsOriginal')
+      .addItem('Earnings', 'fetchEarningsOriginal')
+      .addItem('Tech', 'fetchTechOriginal')
+      .addItem('Culture', 'fetchCultureOriginal')
+      .addItem('World', 'fetchWorldOriginal')
+      .addItem('Economy', 'fetchEconomyOriginal')
+      .addItem('Elections', 'fetchElectionsOriginal')
+      .addItem('Mentions', 'fetchMentionsOriginal'))
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
