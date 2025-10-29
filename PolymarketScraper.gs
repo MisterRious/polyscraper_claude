@@ -832,55 +832,73 @@ function fetchCategoryStructured(category) {
     limit: 500
   });
 
-  // Filter for category - use flexible matching
+  Logger.log(`Fetching category: ${category}`);
+  Logger.log(`Total markets fetched: ${allMarkets.length}`);
+
+  // Check first market structure for debugging
+  if (allMarkets.length > 0) {
+    const firstMarket = allMarkets[0];
+    Logger.log(`First market question: ${firstMarket.question}`);
+    Logger.log(`First market tags field exists: ${firstMarket.tags !== undefined}`);
+    Logger.log(`First market tags value: ${JSON.stringify(firstMarket.tags)}`);
+    Logger.log(`First market keys: ${Object.keys(firstMarket).join(', ')}`);
+  }
+
+  // Filter for category - try tags first, fall back to question/description
   const categoryMarkets = allMarkets.filter(market => {
-    if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-      return false; // Skip markets without tags
-    }
-
-    const tags = market.tags.map(t => {
-      if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-      return (t || '').toLowerCase();
-    }).filter(t => t !== ''); // Remove empty tags
-
     const categoryLower = category.toLowerCase();
 
-    // Try multiple matching strategies
-    return tags.some(tag => {
-      // Strategy 1: Exact match
-      if (tag === categoryLower) return true;
+    // Strategy 1: Try tags if they exist
+    if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
+      const tags = market.tags.map(t => {
+        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+        return (t || '').toLowerCase();
+      }).filter(t => t !== '');
 
-      // Strategy 2: Contains (e.g., "sports" contains in "sports-betting")
-      if (tag.includes(categoryLower)) return true;
+      const tagMatch = tags.some(tag => {
+        return tag === categoryLower ||
+               tag.includes(categoryLower) ||
+               (categoryLower.includes(tag) && tag.length > 3) ||
+               tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+      });
 
-      // Strategy 3: Category contains tag (e.g., "sports" in "sport")
-      if (categoryLower.includes(tag) && tag.length > 3) return true;
+      if (tagMatch) {
+        Logger.log(`✓ Tag match: ${market.question} | Tags: ${tags.join(', ')}`);
+        return true;
+      }
+    }
 
-      // Strategy 4: Remove 's' for plural matching (sports -> sport)
-      const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
-      if (tag === singularCategory || tag.includes(singularCategory)) return true;
+    // Strategy 2: Fallback to question/description (only for category matching)
+    const question = (market.question || '').toLowerCase();
+    const description = (market.description || '').toLowerCase();
 
-      return false;
-    });
+    // Only match if category is mentioned prominently (at start or as whole word)
+    const wordBoundaryRegex = new RegExp(`\\b${categoryLower}\\b`, 'i');
+
+    if (wordBoundaryRegex.test(question) || wordBoundaryRegex.test(description)) {
+      Logger.log(`✓ Text match: ${market.question}`);
+      return true;
+    }
+
+    return false;
   });
 
-  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
+  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets`);
 
   if (categoryMarkets.length === 0) {
-    // Log all unique tags for debugging
-    const allTagsSet = new Set();
-    allMarkets.forEach(m => {
-      if (m.tags && Array.isArray(m.tags)) {
-        m.tags.forEach(t => {
-          const label = typeof t === 'object' ? (t.label || t.tag || t.name) : t;
-          if (label) allTagsSet.add(label);
-        });
-      }
-    });
-    const allTagsList = Array.from(allTagsSet).sort().slice(0, 20).join(', ');
-    Logger.log(`Available tags (first 20): ${allTagsList}`);
+    // Show diagnostic info
+    const marketsWithTags = allMarkets.filter(m => m.tags && Array.isArray(m.tags) && m.tags.length > 0).length;
 
-    SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTry:\n- Click "📋 Show All Tags" to see available categories\n- Use "All Markets" to see everything\n\nFirst 20 available tags:\n${allTagsList}`);
+    SpreadsheetApp.getUi().alert(
+      `No markets found for "${category}".\n\n` +
+      `Stats:\n` +
+      `- Total markets: ${allMarkets.length}\n` +
+      `- Markets with tags: ${marketsWithTags}\n\n` +
+      `Try:\n` +
+      `- Click "📋 Show All Tags"\n` +
+      `- Use "All Markets"\n` +
+      `- Check View → Logs for details`
+    );
     return;
   }
 
