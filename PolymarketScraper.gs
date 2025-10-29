@@ -94,6 +94,16 @@ function getMarkets(options = {}) {
           }
         }
 
+        // Parse outcomes if it's a string
+        if (market.outcomes && typeof market.outcomes === 'string') {
+          try {
+            market.outcomes = JSON.parse(market.outcomes);
+          } catch (e) {
+            Logger.log('Error parsing outcomes: ' + e);
+            market.outcomes = ['Yes', 'No']; // Default fallback
+          }
+        }
+
         // Parse clobTokenIds if it's a string
         if (market.clobTokenIds && typeof market.clobTokenIds === 'string') {
           try {
@@ -101,6 +111,16 @@ function getMarkets(options = {}) {
           } catch (e) {
             Logger.log('Error parsing clobTokenIds: ' + e);
             market.clobTokenIds = [];
+          }
+        }
+
+        // Parse tags if it's a string
+        if (market.tags && typeof market.tags === 'string') {
+          try {
+            market.tags = JSON.parse(market.tags);
+          } catch (e) {
+            Logger.log('Error parsing tags: ' + e);
+            market.tags = [];
           }
         }
       });
@@ -237,9 +257,25 @@ function displayMarkets(sheet, markets) {
     try {
       // Extract outcomes - they might be in different formats
       let outcomesText = 'Yes, No'; // Default for binary markets
+
+      // Check if outcomes is already parsed as an array
       if (market.outcomes && Array.isArray(market.outcomes)) {
         outcomesText = market.outcomes.join(', ');
-      } else if (market.tokens && Array.isArray(market.tokens)) {
+      }
+      // If it's still a string, try to parse it here as backup
+      else if (market.outcomes && typeof market.outcomes === 'string') {
+        try {
+          const parsed = JSON.parse(market.outcomes);
+          if (Array.isArray(parsed)) {
+            outcomesText = parsed.join(', ');
+          }
+        } catch (e) {
+          Logger.log('Error parsing outcomes in displayMarkets: ' + e);
+          outcomesText = market.outcomes; // Use as-is if parsing fails
+        }
+      }
+      // Check tokens as alternative
+      else if (market.tokens && Array.isArray(market.tokens)) {
         outcomesText = market.tokens.map(t => t.outcome || t).join(', ');
       }
 
@@ -251,13 +287,37 @@ function displayMarkets(sheet, markets) {
           return isNaN(price) ? p : `${(price * 100).toFixed(1)}%`;
         }).join(', ');
       }
+      // Backup: try to parse if still a string
+      else if (market.outcomePrices && typeof market.outcomePrices === 'string') {
+        try {
+          const parsed = JSON.parse(market.outcomePrices);
+          if (Array.isArray(parsed)) {
+            pricesText = parsed.map(p => {
+              const price = parseFloat(p);
+              return isNaN(price) ? p : `${(price * 100).toFixed(1)}%`;
+            }).join(', ');
+          }
+        } catch (e) {
+          Logger.log('Error parsing outcomePrices in displayMarkets: ' + e);
+          pricesText = market.outcomePrices; // Use as-is
+        }
+      }
 
       // Get tags
-      const tags = market.tags || [];
-      const tagsText = tags.map(t => {
+      let tags = market.tags || [];
+      // Backup: parse tags if it's a string
+      if (typeof tags === 'string') {
+        try {
+          tags = JSON.parse(tags);
+        } catch (e) {
+          Logger.log('Error parsing tags in displayMarkets: ' + e);
+          tags = [];
+        }
+      }
+      const tagsText = Array.isArray(tags) ? tags.map(t => {
         if (typeof t === 'object') return t.label || t.tag || t.name || '';
         return t;
-      }).join(', ');
+      }).join(', ') : '';
 
       // Format dates - try both ISO and regular date fields
       let startDate = '';
