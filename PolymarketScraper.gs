@@ -1501,12 +1501,36 @@ function fetchAllNBA() {
     'nba', 'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'sixers', '76ers',
     'bucks', 'mavericks', 'nuggets', 'suns', 'clippers', 'raptors', 'pacers', 'hawks',
     'cavaliers', 'wizards', 'hornets', 'magic', 'pistons', 'spurs', 'rockets', 'grizzlies',
-    'pelicans', 'thunder', 'jazz', 'kings', 'blazers', 'timberwolves', 'cavs'
+    'pelicans', 'thunder', 'jazz', 'kings', 'blazer', 'timberwolves', 'cavs'
+  ];
+
+  // Exclusion keywords to filter out false positives
+  const nbaExcludeKeywords = [
+    'movie', 'film', 'box office', 'grossing', 'album', 'song', 'music',
+    'ceo', 'coinbase', 'crypto', 'bitcoin', 'ethereum', 'token', 'defi',
+    'president', 'election', 'senate', 'congress', 'trump', 'biden',
+    'ukraine', 'russia', 'nato', 'war', 'military',
+    'inflation', 'fed', 'interest rate', 'gdp', 'economy',
+    'vaccine', 'covid', 'virus', 'disease',
+    'arrest', 'guilty', 'lawsuit', 'trial', 'court',
+    'thunderbolt', 'armstrong'
   ];
 
   // Filter for NBA markets
   const nbaMarkets = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
+
+    // Check exclusions first
+    const hasExclusion = nbaExcludeKeywords.some(keyword =>
+      question.includes(keyword.toLowerCase())
+    );
+
+    if (hasExclusion) {
+      Logger.log(`✗ Excluded (non-NBA): ${market.question.substring(0, 60)}`);
+      return false;
+    }
+
+    // Then check for NBA keywords
     const hasNBA = nbaKeywords.some(keyword => question.includes(keyword));
 
     if (hasNBA) {
@@ -1556,7 +1580,19 @@ function fetchNBAOct30() {
     'nba', 'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'sixers', '76ers',
     'bucks', 'mavericks', 'nuggets', 'suns', 'clippers', 'raptors', 'pacers', 'hawks',
     'cavaliers', 'wizards', 'hornets', 'magic', 'pistons', 'spurs', 'rockets', 'grizzlies',
-    'pelicans', 'thunder', 'jazz', 'kings', 'blazers', 'timberwolves', 'cavs'
+    'pelicans', 'thunder', 'jazz', 'kings', 'blazer', 'timberwolves', 'cavs'
+  ];
+
+  // Exclusion keywords to filter out false positives
+  const nbaExcludeKeywords = [
+    'movie', 'film', 'box office', 'grossing', 'album', 'song', 'music',
+    'ceo', 'coinbase', 'crypto', 'bitcoin', 'ethereum', 'token', 'defi',
+    'president', 'election', 'senate', 'congress', 'trump', 'biden',
+    'ukraine', 'russia', 'nato', 'war', 'military',
+    'inflation', 'fed', 'interest rate', 'gdp', 'economy',
+    'vaccine', 'covid', 'virus', 'disease',
+    'arrest', 'guilty', 'lawsuit', 'trial', 'court',
+    'thunderbolt', 'armstrong'
   ];
 
   // Target date: October 30, 2025 (check date, not exact time)
@@ -1565,6 +1601,17 @@ function fetchNBAOct30() {
   // First pass: Filter for NBA markets
   const nbaMarketsAll = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
+
+    // Check exclusions first
+    const hasExclusion = nbaExcludeKeywords.some(keyword =>
+      question.includes(keyword.toLowerCase())
+    );
+
+    if (hasExclusion) {
+      return false;
+    }
+
+    // Then check for NBA keywords
     return nbaKeywords.some(keyword => question.includes(keyword));
   });
 
