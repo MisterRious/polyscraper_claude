@@ -24,6 +24,22 @@ const DEFAULT_FETCH_LIMIT = 500;
 // Cell location for user-specified fetch limit
 const LIMIT_CELL = 'B1';
 
+// Category keywords for filtering when tags are not available
+const CATEGORY_KEYWORDS = {
+  'Sports': ['win', 'championship', 'playoff', 'tournament', 'game', 'match', 'season', 'bowl', 'cup', 'league', 'NBA', 'NFL', 'MLB', 'NHL', 'UFC', 'FIFA', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'vs', 'points', 'score', 'finals', 'semifinal', 'champion'],
+  'Politics': ['election', 'vote', 'president', 'senate', 'congress', 'governor', 'political', 'party', 'democrat', 'republican', 'campaign', 'ballot', 'poll'],
+  'Finance': ['stock', 'market', 'price', 'trading', 'investment', 'S&P', 'Dow', 'NASDAQ', 'bond', 'interest rate', 'Fed', 'GDP', 'inflation'],
+  'Crypto': ['Bitcoin', 'BTC', 'Ethereum', 'ETH', 'crypto', 'blockchain', 'NFT', 'DeFi', 'token', 'coin', 'Solana', 'Cardano'],
+  'Geopolitics': ['war', 'conflict', 'treaty', 'sanctions', 'military', 'invasion', 'China', 'Russia', 'NATO', 'UN', 'international'],
+  'Earnings': ['earnings', 'revenue', 'profit', 'EPS', 'quarterly', 'fiscal', 'Q1', 'Q2', 'Q3', 'Q4'],
+  'Tech': ['Apple', 'Google', 'Microsoft', 'Amazon', 'Meta', 'Tesla', 'AI', 'software', 'hardware', 'launch', 'release'],
+  'Culture': ['movie', 'film', 'Oscar', 'Emmy', 'Grammy', 'music', 'album', 'celebrity', 'award', 'box office'],
+  'World': ['country', 'global', 'world', 'international', 'nation'],
+  'Economy': ['recession', 'unemployment', 'jobs', 'economic', 'GDP', 'growth', 'inflation', 'CPI'],
+  'Elections': ['election', '2024', '2025', 'primary', 'nominee', 'candidate', 'electoral'],
+  'Mentions': ['mention', 'tweet', 'social media', 'trending', 'viral']
+};
+
 // Common tag IDs (you may need to discover these for your specific needs)
 const TAGS = {
   // Add tag IDs here after discovering them
@@ -921,6 +937,44 @@ function displayMarkets(sheet, markets) {
 }
 
 /**
+ * Filter markets by category keywords when tags are not available
+ * @param {Array} markets - Array of market objects
+ * @param {string} category - Category name to filter by
+ * @returns {Array} Filtered markets
+ */
+function filterByKeywords(markets, category) {
+  const keywords = CATEGORY_KEYWORDS[category];
+
+  if (!keywords || keywords.length === 0) {
+    Logger.log(`No keywords defined for category: ${category}`);
+    return markets;
+  }
+
+  Logger.log(`Filtering by keywords for ${category}: ${keywords.join(', ')}`);
+
+  const filtered = markets.filter(market => {
+    const question = (market.question || '').toLowerCase();
+    const description = (market.description || '').toLowerCase();
+    const combinedText = question + ' ' + description;
+
+    // Check if any keyword matches
+    const hasKeyword = keywords.some(keyword => {
+      const keywordLower = keyword.toLowerCase();
+      return combinedText.includes(keywordLower);
+    });
+
+    if (hasKeyword) {
+      Logger.log(`✓ Matched: ${market.question.substring(0, 80)}`);
+    }
+
+    return hasKeyword;
+  });
+
+  Logger.log(`Keyword filtering: ${filtered.length} markets matched out of ${markets.length}`);
+  return filtered;
+}
+
+/**
  * Find tag ID by category name from the tags API
  * @param {string} categoryName - The category name to search for
  * @returns {string|null} The tag ID if found, null otherwise
@@ -1058,28 +1112,40 @@ function fetchCategoryStructured(category) {
       Logger.log(`All tags: ${allTagsList.join(', ')}`);
     }
 
-    // Filter by tag labels (client-side)
-    const categoryMarkets = allMarkets.filter(market => {
-      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-        return false;
-      }
+    let categoryMarkets = [];
 
-      const tags = market.tags.map(t => {
-        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-        return (t || '').toLowerCase();
-      }).filter(t => t !== '');
+    // Try tag-based filtering first
+    if (marketsWithTags > 0) {
+      categoryMarkets = allMarkets.filter(market => {
+        if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+          return false;
+        }
 
-      const categoryLower = category.toLowerCase();
+        const tags = market.tags.map(t => {
+          if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+          return (t || '').toLowerCase();
+        }).filter(t => t !== '');
 
-      return tags.some(tag => {
-        return tag === categoryLower ||
-               tag.includes(categoryLower) ||
-               (categoryLower.includes(tag) && tag.length > 3) ||
-               tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+        const categoryLower = category.toLowerCase();
+
+        return tags.some(tag => {
+          return tag === categoryLower ||
+                 tag.includes(categoryLower) ||
+                 (categoryLower.includes(tag) && tag.length > 3) ||
+                 tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+        });
       });
-    });
 
-    Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets via client-side filtering`);
+      Logger.log(`Tag-based filtering: Found ${categoryMarkets.length} markets`);
+    }
+
+    // If tag filtering didn't work, try keyword filtering
+    if (categoryMarkets.length === 0) {
+      Logger.log(`No markets found via tags, trying keyword-based filtering`);
+      categoryMarkets = filterByKeywords(allMarkets, category);
+    }
+
+    Logger.log(`Category "${category}": Found ${categoryMarkets.length} total markets`);
 
     if (categoryMarkets.length === 0) {
       const message = `No markets found for "${category}".\n\n` +
@@ -1089,11 +1155,11 @@ function fetchCategoryStructured(category) {
         `- ${marketsWithNoTagsField} have no tags field\n\n` +
         (allTagsList.length > 0
           ? `Available tags (${allTagsList.length}):\n${allTagsList.slice(0, 30).join(', ')}${allTagsList.length > 30 ? '...' : ''}\n\n`
-          : `NO TAGS FOUND IN API RESPONSE!\n\n`) +
+          : `Tried keyword filtering but found no matches.\n\n`) +
         `Solutions:\n` +
         `1. Click "All Markets" to see everything\n` +
-        `2. Click "Show Available Tags" to see official tag list\n` +
-        `3. Check View → Logs for full tag analysis`;
+        `2. Try a different category\n` +
+        `3. Check View → Logs for detailed filtering info`;
 
       SpreadsheetApp.getUi().alert(message);
       Logger.log(message);
@@ -1149,37 +1215,52 @@ function fetchCategoryOriginal(category) {
       limit: limit
     });
 
-    // Filter for category - use flexible matching
-    const categoryMarkets = allMarkets.filter(market => {
-      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-        return false; // Skip markets without tags
-      }
+    let categoryMarkets = [];
 
-      const tags = market.tags.map(t => {
-        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-        return (t || '').toLowerCase();
-      }).filter(t => t !== ''); // Remove empty tags
+    // Check if markets have tags
+    const marketsWithTags = allMarkets.filter(m => m.tags && Array.isArray(m.tags) && m.tags.length > 0).length;
 
-      const categoryLower = category.toLowerCase();
+    // Try tag-based filtering first if tags are available
+    if (marketsWithTags > 0) {
+      categoryMarkets = allMarkets.filter(market => {
+        if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+          return false; // Skip markets without tags
+        }
 
-      // Try multiple matching strategies
-      return tags.some(tag => {
-        // Strategy 1: Exact match
-        if (tag === categoryLower) return true;
+        const tags = market.tags.map(t => {
+          if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+          return (t || '').toLowerCase();
+        }).filter(t => t !== ''); // Remove empty tags
 
-        // Strategy 2: Contains
-        if (tag.includes(categoryLower)) return true;
+        const categoryLower = category.toLowerCase();
 
-        // Strategy 3: Category contains tag
-        if (categoryLower.includes(tag) && tag.length > 3) return true;
+        // Try multiple matching strategies
+        return tags.some(tag => {
+          // Strategy 1: Exact match
+          if (tag === categoryLower) return true;
 
-        // Strategy 4: Singular/plural matching
-        const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
-        if (tag === singularCategory || tag.includes(singularCategory)) return true;
+          // Strategy 2: Contains
+          if (tag.includes(categoryLower)) return true;
 
-        return false;
+          // Strategy 3: Category contains tag
+          if (categoryLower.includes(tag) && tag.length > 3) return true;
+
+          // Strategy 4: Singular/plural matching
+          const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
+          if (tag === singularCategory || tag.includes(singularCategory)) return true;
+
+          return false;
+        });
       });
-    });
+
+      Logger.log(`Tag-based filtering: Found ${categoryMarkets.length} markets`);
+    }
+
+    // If tag filtering didn't work, try keyword filtering
+    if (categoryMarkets.length === 0) {
+      Logger.log(`No markets found via tags, trying keyword-based filtering`);
+      categoryMarkets = filterByKeywords(allMarkets, category);
+    }
 
     Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
 
@@ -1197,7 +1278,7 @@ function fetchCategoryOriginal(category) {
       const allTagsList = Array.from(allTagsSet).sort().slice(0, 20).join(', ');
       Logger.log(`Available tags (first 20): ${allTagsList}`);
 
-      SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTry:\n- Click "📋 Show All Tags" to see available categories\n- Use "All Markets"\n\nFirst 20 tags:\n${allTagsList}`);
+      SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTried keyword filtering but found no matches.\n\nTry:\n- Click "All Markets" to see everything\n- Try a different category\n- Check View → Logs for details`);
       return;
     }
 
