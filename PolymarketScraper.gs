@@ -18,12 +18,113 @@
 // Polymarket API base URL
 const POLYMARKET_API_BASE = 'https://gamma-api.polymarket.com';
 
+// Default fetch limit
+const DEFAULT_FETCH_LIMIT = 500;
+
+// Cell location for user-specified fetch limit
+const LIMIT_CELL = 'B1';
+
 // Common tag IDs (you may need to discover these for your specific needs)
 const TAGS = {
   // Add tag IDs here after discovering them
   // Example: SOCCER: '12345',
   // COPA_LIBERTADORES: '67890'
 };
+
+// ============================================
+// CONFIGURATION FUNCTIONS
+// ============================================
+
+/**
+ * Get the fetch limit from cell B1, or use default
+ * @returns {number} The number of markets to fetch
+ */
+function getFetchLimit() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const limitValue = sheet.getRange(LIMIT_CELL).getValue();
+
+    if (limitValue && typeof limitValue === 'number' && limitValue > 0) {
+      Logger.log(`Using user-specified limit from ${LIMIT_CELL}: ${limitValue}`);
+      return Math.min(limitValue, 1000); // Cap at 1000 to avoid API issues
+    }
+  } catch (e) {
+    Logger.log('Error reading limit from cell: ' + e);
+  }
+
+  Logger.log(`Using default limit: ${DEFAULT_FETCH_LIMIT}`);
+  return DEFAULT_FETCH_LIMIT;
+}
+
+/**
+ * Set the fetch limit via UI prompt
+ * Stores the value in cell B1
+ */
+function setFetchLimit() {
+  const ui = SpreadsheetApp.getUi();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  const currentLimit = getFetchLimit();
+
+  const response = ui.prompt(
+    'Set Fetch Limit',
+    `How many markets do you want to fetch?\n\nCurrent limit: ${currentLimit}\nRecommended: 100-1000\n\nEnter a number:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() === ui.Button.OK) {
+    const input = response.getResponseText();
+    const limit = parseInt(input, 10);
+
+    if (isNaN(limit) || limit <= 0) {
+      ui.alert('Invalid Input', 'Please enter a positive number.', ui.ButtonSet.OK);
+      return;
+    }
+
+    if (limit > 1000) {
+      const confirm = ui.alert(
+        'Large Limit Warning',
+        `You entered ${limit}, but the API may not return more than 1000 results.\n\nContinue with ${limit}?`,
+        ui.ButtonSet.YES_NO
+      );
+
+      if (confirm === ui.Button.NO) {
+        return;
+      }
+    }
+
+    // Save to cell B1
+    sheet.getRange(LIMIT_CELL).setValue(limit);
+    sheet.getRange(LIMIT_CELL).setNote(`Fetch limit: ${limit} markets\nSet via Polymarket > Set Fetch Limit`);
+
+    // Format the cell
+    sheet.getRange(LIMIT_CELL).setFontWeight('bold').setBackground('#ffe599');
+
+    ui.alert('Fetch Limit Updated', `Fetch limit set to ${limit} markets.\n\nThis value is saved in cell ${LIMIT_CELL} and will be used for all future fetches.`, ui.ButtonSet.OK);
+
+    Logger.log(`Fetch limit updated to: ${limit}`);
+  }
+}
+
+/**
+ * Reset fetch limit to default
+ */
+function resetFetchLimit() {
+  const ui = SpreadsheetApp.getUi();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  const response = ui.alert(
+    'Reset Fetch Limit',
+    `Reset fetch limit to default (${DEFAULT_FETCH_LIMIT})?`,
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response === ui.Button.YES) {
+    sheet.getRange(LIMIT_CELL).clear();
+    ui.alert('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
+    Logger.log('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
+  }
+}
 
 // ============================================
 // MAIN FUNCTIONS
@@ -885,8 +986,10 @@ function findTagId(categoryName) {
  */
 function fetchCategoryStructured(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
 
   Logger.log(`Fetching category: ${category}`);
+  Logger.log(`Fetch limit: ${limit}`);
 
   // Try to find the tag ID from the tags API
   const tagId = findTagId(category);
@@ -900,7 +1003,7 @@ function fetchCategoryStructured(category) {
       tag: tagId,
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
@@ -919,7 +1022,7 @@ function fetchCategoryStructured(category) {
     const allMarkets = getMarkets({
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Total markets fetched: ${allMarkets.length}`);
@@ -1007,8 +1110,10 @@ function fetchCategoryStructured(category) {
  */
 function fetchCategoryOriginal(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
 
   Logger.log(`Fetching category (original format): ${category}`);
+  Logger.log(`Fetch limit: ${limit}`);
 
   // Try to find the tag ID from the tags API
   const tagId = findTagId(category);
@@ -1022,7 +1127,7 @@ function fetchCategoryOriginal(category) {
       tag: tagId,
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
@@ -1041,7 +1146,7 @@ function fetchCategoryOriginal(category) {
     const allMarkets = getMarkets({
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     // Filter for category - use flexible matching
@@ -1136,7 +1241,9 @@ function fetchMarketsStructured() {
 
   // Get parameters from sheet (you can set these in specific cells)
   const tagId = sheet.getRange('A1').getValue(); // Tag ID from cell A1
-  const limit = 500; // Number of markets to fetch
+  const limit = getFetchLimit(); // Get from B1 or use default
+
+  Logger.log(`Fetching all markets with limit: ${limit}`);
 
   // Fetch markets
   const markets = getMarkets({
@@ -1213,6 +1320,9 @@ function onOpen() {
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
+    .addItem('⚙️ Set Fetch Limit', 'setFetchLimit')
+    .addItem('🔄 Reset Fetch Limit', 'resetFetchLimit')
+    .addSeparator()
     .addItem('🔧 Test Market Fetch', 'testMarketFetch')
     .addItem('🔍 Debug API Response', 'debugMarketResponse')
     .addItem('📋 Show All Tags', 'showAllTags')
@@ -1228,10 +1338,11 @@ function onOpen() {
  * Run this to see what tag names Polymarket actually uses
  */
 function showAllTags() {
+  const limit = getFetchLimit();
   const allMarkets = getMarkets({
     closed: false,
     active: true,
-    limit: 500
+    limit: limit
   });
 
   const allTags = new Set();
