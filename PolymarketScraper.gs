@@ -437,16 +437,21 @@ function displayMarketsStructured(sheet, markets) {
 
   // Set headers
   const headers = [
-    'Category',
-    'SubCategory1',
-    'SubCategory2',
-    'Listing',
-    'Listing ID',
-    'Date',
-    'Time (ET)',
-    'Moneyline',
-    'Outcome',
-    'Price'
+    'conditionId',
+    'question',
+    'title',
+    'slug',
+    'category',
+    'subcategory1',
+    'subcategory2',
+    'subcategories',
+    'groupItemTitle',
+    'groupItem',
+    'endDate',
+    'startDate',
+    'tags',
+    'outcome',
+    'price'
   ];
 
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -481,93 +486,8 @@ function displayMarketsStructured(sheet, markets) {
 
   validMarkets.forEach((market, index) => {
     try {
-      // Extract categories from tags or matched category
-      let category = '';
-      let subCategory1 = '';
-      let subCategory2 = '';
-
-      // First check if this market was matched by keyword filtering
-      if (market._matchedCategory) {
-        category = market._matchedCategory;
-        // Try to infer subcategories from matched keywords if available
-        if (market._matchedKeywords && market._matchedKeywords.length > 0) {
-          // Use matched keywords as hints for subcategories
-          subCategory1 = market._matchedKeywords[0];
-        }
-      }
-      // Then try to extract from tags
-      else if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
-        // Extract tag labels
-        const tagLabels = market.tags.map(tag => {
-          if (typeof tag === 'object') {
-            return tag.label || tag.tag || tag.name || '';
-          }
-          return tag || '';
-        }).filter(t => t !== ''); // Remove empty tags
-
-        // Assign tags to categories in order
-        if (tagLabels.length > 0) {
-          category = tagLabels[0]; // First tag = Category
-        }
-        if (tagLabels.length > 1) {
-          subCategory1 = tagLabels[1]; // Second tag = SubCategory1
-        }
-        if (tagLabels.length > 2) {
-          subCategory2 = tagLabels[2]; // Third tag = SubCategory2
-        }
-      }
-
-      // If still no category, use generic fallback
-      if (!category) {
-        category = 'Markets';
-      }
-
-      // Extract listing (match name, team abbreviations)
-      let listing = market.question || '';
-      listing = extractMatchListing(listing);
-
-      // Get date and time
-      let eventDate = '';
-      let eventTime = '';
-      let timezone = 'America/Toronto';
-
-      if (market.endDateIso || market.endDate) {
-        const dateStr = market.endDateIso || market.endDate;
-        const date = new Date(dateStr);
-
-        // Convert to Toronto timezone
-        const torontoTime = convertToTimezone(date, timezone);
-
-        eventDate = formatDate(torontoTime); // YYYY-MM-DD
-        eventTime = formatTime(torontoTime); // HH:MM
-      }
-
-      // Parse outcomes and prices
-      let outcomes = [];
-      let prices = [];
-
-      if (market.outcomes && Array.isArray(market.outcomes)) {
-        outcomes = market.outcomes;
-      }
-
-      if (market.outcomePrices && Array.isArray(market.outcomePrices)) {
-        prices = market.outcomePrices.map(p => Math.round(parseFloat(p) * 100));
-      }
-
-      // Determine market type and create rows
-      const marketRows = createMarketRows(
-        category,
-        subCategory1,
-        subCategory2,
-        listing,
-        market.id || '',
-        eventDate,
-        eventTime,
-        outcomes,
-        prices,
-        market.question
-      );
-
+      // Create rows from market object
+      const marketRows = createMarketRows(market);
       allRows.push(...marketRows);
 
     } catch (err) {
@@ -619,13 +539,19 @@ function filterValidMarkets(markets) {
         return false;
       }
 
-      // Check 3: Market must not be archived
+      // Check 3: Market must not be resolved
+      if (market.resolved === true) {
+        Logger.log(`Filtered out (resolved): ${market.question}`);
+        return false;
+      }
+
+      // Check 4: Market must not be archived
       if (market.archived === true) {
         Logger.log(`Filtered out (archived): ${market.question}`);
         return false;
       }
 
-      // Check 4: End date must be in the future
+      // Check 5: End date must be in the future
       if (market.endDateIso || market.endDate) {
         const endDateStr = market.endDateIso || market.endDate;
         const endDate = new Date(endDateStr);
@@ -636,7 +562,7 @@ function filterValidMarkets(markets) {
         }
       }
 
-      // Check 5: If acceptingOrders field exists, it should be true
+      // Check 6: If acceptingOrders field exists, it should be true
       if (market.acceptingOrders !== undefined && market.acceptingOrders === false) {
         Logger.log(`Filtered out (not accepting orders): ${market.question}`);
         return false;
@@ -688,106 +614,114 @@ function extractMatchListing(question) {
  * Create rows for a market based on outcomes
  * For soccer matches with 3 outcomes (Team1, Draw, Team2), creates 6 rows (each outcome has YES/NO)
  */
-function createMarketRows(category, subCategory1, subCategory2, listing, listingId, date, time, outcomes, prices, question) {
+function createMarketRows(market) {
   const rows = [];
 
-  // Detect market type
-  const isDrawMarket = outcomes.some(o => o && o.toLowerCase().includes('draw'));
-  const isBinaryMarket = outcomes.length === 2 && (
-    outcomes.some(o => o && o.toLowerCase() === 'yes') ||
-    outcomes.some(o => o && o.toLowerCase() === 'no')
-  );
+  // Extract all API fields
+  const conditionId = market.conditionId || '';
+  const question = market.question || '';
+  const title = market.title || '';
+  const slug = market.slug || '';
 
-  if (isDrawMarket || outcomes.length === 3) {
-    // Soccer match with Draw (3-way market)
-    // Each outcome gets YES/NO rows
-    outcomes.forEach((outcome, idx) => {
-      const price = prices[idx] || 0;
-      const inversePrice = 100 - price;
+  // Extract categories
+  let category = '';
+  let subCategory1 = '';
+  let subCategory2 = '';
 
-      // Determine moneyline label
-      let moneyline = outcome;
-      if (outcome && outcome.toLowerCase().includes('draw')) {
-        moneyline = 'DRAW';
+  // First check if this market was matched by keyword filtering
+  if (market._matchedCategory) {
+    category = market._matchedCategory;
+    if (market._matchedKeywords && market._matchedKeywords.length > 0) {
+      subCategory1 = market._matchedKeywords[0];
+    }
+  }
+  // Then try to extract from tags
+  else if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
+    const tagLabels = market.tags.map(tag => {
+      if (typeof tag === 'object') {
+        return tag.label || tag.tag || tag.name || '';
       }
+      return tag || '';
+    }).filter(t => t !== '');
 
-      // YES row
-      rows.push([
-        category,
-        subCategory1,
-        subCategory2,
-        listing,
-        listingId,
-        date,
-        time,
-        moneyline,
-        'YES',
-        price
-      ]);
+    if (tagLabels.length > 0) category = tagLabels[0];
+    if (tagLabels.length > 1) subCategory1 = tagLabels[1];
+    if (tagLabels.length > 2) subCategory2 = tagLabels[2];
+  }
 
-      // NO row
-      rows.push([
-        category,
-        subCategory1,
-        subCategory2,
-        listing,
-        listingId,
-        date,
-        time,
-        moneyline,
-        'NO',
-        inversePrice
-      ]);
-    });
-  } else if (isBinaryMarket) {
-    // Binary Yes/No market
-    outcomes.forEach((outcome, idx) => {
-      const price = prices[idx] || 0;
+  // If still no category, use generic fallback
+  if (!category) {
+    category = 'Markets';
+  }
 
-      rows.push([
-        category,
-        subCategory1,
-        subCategory2,
-        listing,
-        listingId,
-        date,
-        time,
-        outcome,
-        'YES',
-        price
-      ]);
-    });
+  // Subcategories as JSON array string
+  const subcategories = market.tags ? JSON.stringify(market.tags.map(t =>
+    typeof t === 'object' ? (t.label || t.tag || t.name || '') : t
+  )) : '';
+
+  const groupItemTitle = market.groupItemTitle || '';
+  const groupItem = market.groupItemThreshold || '';
+
+  // Format dates
+  const endDate = market.endDateIso || market.endDate || '';
+  const startDate = market.startDateIso || market.startDate || '';
+
+  // Tags as JSON string
+  const tagsStr = market.tags ? JSON.stringify(market.tags) : '';
+
+  // Parse outcomes and prices
+  let outcomes = [];
+  let prices = [];
+
+  if (market.outcomes && Array.isArray(market.outcomes)) {
+    outcomes = market.outcomes;
+  }
+
+  if (market.outcomePrices && Array.isArray(market.outcomePrices)) {
+    prices = market.outcomePrices.map(p => Math.round(parseFloat(p) * 100));
+  }
+
+  // Create one row per outcome
+  if (outcomes.length === 0) {
+    // No outcomes, create single row with empty outcome/price
+    rows.push([
+      conditionId,
+      question,
+      title,
+      slug,
+      category,
+      subCategory1,
+      subCategory2,
+      subcategories,
+      groupItemTitle,
+      groupItem,
+      endDate,
+      startDate,
+      tagsStr,
+      '',
+      ''
+    ]);
   } else {
-    // Multi-outcome market (not draw-based)
-    // Create YES/NO rows for each outcome
+    // Create one row per outcome
     outcomes.forEach((outcome, idx) => {
       const price = prices[idx] || 0;
-      const inversePrice = 100 - price;
 
       rows.push([
+        conditionId,
+        question,
+        title,
+        slug,
         category,
         subCategory1,
         subCategory2,
-        listing,
-        listingId,
-        date,
-        time,
+        subcategories,
+        groupItemTitle,
+        groupItem,
+        endDate,
+        startDate,
+        tagsStr,
         outcome,
-        'YES',
         price
-      ]);
-
-      rows.push([
-        category,
-        subCategory1,
-        subCategory2,
-        listing,
-        listingId,
-        date,
-        time,
-        outcome,
-        'NO',
-        inversePrice
       ]);
     });
   }
