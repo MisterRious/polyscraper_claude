@@ -820,95 +820,185 @@ function displayMarkets(sheet, markets) {
 }
 
 /**
+ * Find tag ID by category name from the tags API
+ * @param {string} categoryName - The category name to search for
+ * @returns {string|null} The tag ID if found, null otherwise
+ */
+function findTagId(categoryName) {
+  try {
+    const tags = getTags();
+
+    if (!Array.isArray(tags) || tags.length === 0) {
+      Logger.log('No tags returned from API');
+      return null;
+    }
+
+    const categoryLower = categoryName.toLowerCase();
+
+    // Try exact match first
+    let matchedTag = tags.find(tag => {
+      const label = (tag.label || tag.name || tag.tag || '').toLowerCase();
+      return label === categoryLower;
+    });
+
+    if (matchedTag) {
+      Logger.log(`Found exact tag match: ${matchedTag.id} for "${categoryName}"`);
+      return matchedTag.id;
+    }
+
+    // Try partial match
+    matchedTag = tags.find(tag => {
+      const label = (tag.label || tag.name || tag.tag || '').toLowerCase();
+      return label.includes(categoryLower) || categoryLower.includes(label);
+    });
+
+    if (matchedTag) {
+      Logger.log(`Found partial tag match: ${matchedTag.id} for "${categoryName}"`);
+      return matchedTag.id;
+    }
+
+    // Try singular/plural variations
+    const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
+    matchedTag = tags.find(tag => {
+      const label = (tag.label || tag.name || tag.tag || '').toLowerCase();
+      return label === singularCategory || label.includes(singularCategory);
+    });
+
+    if (matchedTag) {
+      Logger.log(`Found singular/plural match: ${matchedTag.id} for "${categoryName}"`);
+      return matchedTag.id;
+    }
+
+    Logger.log(`No tag found for "${categoryName}"`);
+    Logger.log(`Available tags: ${tags.map(t => t.label || t.name || t.tag).join(', ')}`);
+    return null;
+
+  } catch (error) {
+    Logger.log(`Error finding tag ID: ${error}`);
+    return null;
+  }
+}
+
+/**
  * Generic function to fetch markets by category (structured format)
  * @param {string} category - The category name to filter by
  */
 function fetchCategoryStructured(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
-  const allMarkets = getMarkets({
-    closed: false,
-    active: true,
-    limit: 500
-  });
-
   Logger.log(`Fetching category: ${category}`);
-  Logger.log(`Total markets fetched: ${allMarkets.length}`);
 
-  // Analyze tag structure
-  let marketsWithTags = 0;
-  let marketsWithEmptyTags = 0;
-  let marketsWithNoTagsField = 0;
-  const allTagsSet = new Set();
+  // Try to find the tag ID from the tags API
+  const tagId = findTagId(category);
 
-  allMarkets.forEach(market => {
-    if (market.tags === undefined) {
-      marketsWithNoTagsField++;
-    } else if (!Array.isArray(market.tags) || market.tags.length === 0) {
-      marketsWithEmptyTags++;
-    } else {
-      marketsWithTags++;
-      market.tags.forEach(tag => {
-        const label = typeof tag === 'object' ? (tag.label || tag.tag || tag.name) : tag;
-        if (label) allTagsSet.add(label);
-      });
-    }
-  });
+  let markets;
 
-  const allTagsList = Array.from(allTagsSet).sort();
-
-  Logger.log(`=== TAG ANALYSIS ===`);
-  Logger.log(`Markets with tags: ${marketsWithTags}`);
-  Logger.log(`Markets with empty tags array: ${marketsWithEmptyTags}`);
-  Logger.log(`Markets with no tags field: ${marketsWithNoTagsField}`);
-  Logger.log(`Unique tags found: ${allTagsList.length}`);
-  if (allTagsList.length > 0) {
-    Logger.log(`All tags: ${allTagsList.join(', ')}`);
-  }
-
-  // ONLY use tags for filtering - no text fallback
-  const categoryMarkets = allMarkets.filter(market => {
-    if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-      return false;
-    }
-
-    const tags = market.tags.map(t => {
-      if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-      return (t || '').toLowerCase();
-    }).filter(t => t !== '');
-
-    const categoryLower = category.toLowerCase();
-
-    return tags.some(tag => {
-      return tag === categoryLower ||
-             tag.includes(categoryLower) ||
-             (categoryLower.includes(tag) && tag.length > 3) ||
-             tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+  if (tagId) {
+    // Use tag ID for precise filtering
+    Logger.log(`Using tag ID: ${tagId}`);
+    markets = getMarkets({
+      tag: tagId,
+      closed: false,
+      active: true,
+      limit: 500
     });
-  });
 
-  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets`);
+    Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
 
-  if (categoryMarkets.length === 0) {
-    const message = `No markets found for "${category}".\n\n` +
-      `API returned ${allMarkets.length} markets:\n` +
-      `- ${marketsWithTags} have tags\n` +
-      `- ${marketsWithEmptyTags} have empty tags\n` +
-      `- ${marketsWithNoTagsField} have no tags field\n\n` +
-      (allTagsList.length > 0
-        ? `Available tags (${allTagsList.length}):\n${allTagsList.slice(0, 30).join(', ')}${allTagsList.length > 30 ? '...' : ''}\n\n`
-        : `NO TAGS FOUND IN API RESPONSE!\n\n`) +
-      `Solutions:\n` +
-      `1. Click "All Markets" to see everything\n` +
-      `2. Check View → Logs for full tag list\n` +
-      `3. The API might not be returning tagged markets`;
+    if (markets.length === 0) {
+      SpreadsheetApp.getUi().alert(`No active markets found for "${category}" (tag ID: ${tagId})`);
+      return;
+    }
 
-    SpreadsheetApp.getUi().alert(message);
-    Logger.log(message);
-    return;
+    displayMarketsStructured(sheet, markets);
+
+  } else {
+    // Fallback: Fetch all markets and filter client-side
+    Logger.log(`No tag ID found, fetching all markets and filtering client-side`);
+
+    const allMarkets = getMarkets({
+      closed: false,
+      active: true,
+      limit: 500
+    });
+
+    Logger.log(`Total markets fetched: ${allMarkets.length}`);
+
+    // Analyze tag structure
+    let marketsWithTags = 0;
+    let marketsWithEmptyTags = 0;
+    let marketsWithNoTagsField = 0;
+    const allTagsSet = new Set();
+
+    allMarkets.forEach(market => {
+      if (market.tags === undefined) {
+        marketsWithNoTagsField++;
+      } else if (!Array.isArray(market.tags) || market.tags.length === 0) {
+        marketsWithEmptyTags++;
+      } else {
+        marketsWithTags++;
+        market.tags.forEach(tag => {
+          const label = typeof tag === 'object' ? (tag.label || tag.tag || tag.name) : tag;
+          if (label) allTagsSet.add(label);
+        });
+      }
+    });
+
+    const allTagsList = Array.from(allTagsSet).sort();
+
+    Logger.log(`=== TAG ANALYSIS ===`);
+    Logger.log(`Markets with tags: ${marketsWithTags}`);
+    Logger.log(`Markets with empty tags array: ${marketsWithEmptyTags}`);
+    Logger.log(`Markets with no tags field: ${marketsWithNoTagsField}`);
+    Logger.log(`Unique tags found: ${allTagsList.length}`);
+    if (allTagsList.length > 0) {
+      Logger.log(`All tags: ${allTagsList.join(', ')}`);
+    }
+
+    // Filter by tag labels (client-side)
+    const categoryMarkets = allMarkets.filter(market => {
+      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+        return false;
+      }
+
+      const tags = market.tags.map(t => {
+        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+        return (t || '').toLowerCase();
+      }).filter(t => t !== '');
+
+      const categoryLower = category.toLowerCase();
+
+      return tags.some(tag => {
+        return tag === categoryLower ||
+               tag.includes(categoryLower) ||
+               (categoryLower.includes(tag) && tag.length > 3) ||
+               tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+      });
+    });
+
+    Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets via client-side filtering`);
+
+    if (categoryMarkets.length === 0) {
+      const message = `No markets found for "${category}".\n\n` +
+        `API returned ${allMarkets.length} markets:\n` +
+        `- ${marketsWithTags} have tags\n` +
+        `- ${marketsWithEmptyTags} have empty tags\n` +
+        `- ${marketsWithNoTagsField} have no tags field\n\n` +
+        (allTagsList.length > 0
+          ? `Available tags (${allTagsList.length}):\n${allTagsList.slice(0, 30).join(', ')}${allTagsList.length > 30 ? '...' : ''}\n\n`
+          : `NO TAGS FOUND IN API RESPONSE!\n\n`) +
+        `Solutions:\n` +
+        `1. Click "All Markets" to see everything\n` +
+        `2. Click "Show Available Tags" to see official tag list\n` +
+        `3. Check View → Logs for full tag analysis`;
+
+      SpreadsheetApp.getUi().alert(message);
+      Logger.log(message);
+      return;
+    }
+
+    displayMarketsStructured(sheet, categoryMarkets);
   }
-
-  displayMarketsStructured(sheet, categoryMarkets);
 }
 
 /**
@@ -918,65 +1008,96 @@ function fetchCategoryStructured(category) {
 function fetchCategoryOriginal(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
-  const allMarkets = getMarkets({
-    closed: false,
-    active: true,
-    limit: 500
-  });
+  Logger.log(`Fetching category (original format): ${category}`);
 
-  // Filter for category - use flexible matching
-  const categoryMarkets = allMarkets.filter(market => {
-    if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-      return false; // Skip markets without tags
+  // Try to find the tag ID from the tags API
+  const tagId = findTagId(category);
+
+  let markets;
+
+  if (tagId) {
+    // Use tag ID for precise filtering
+    Logger.log(`Using tag ID: ${tagId}`);
+    markets = getMarkets({
+      tag: tagId,
+      closed: false,
+      active: true,
+      limit: 500
+    });
+
+    Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
+
+    if (markets.length === 0) {
+      SpreadsheetApp.getUi().alert(`No active markets found for "${category}" (tag ID: ${tagId})`);
+      return;
     }
 
-    const tags = market.tags.map(t => {
-      if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-      return (t || '').toLowerCase();
-    }).filter(t => t !== ''); // Remove empty tags
+    displayMarkets(sheet, markets);
 
-    const categoryLower = category.toLowerCase();
+  } else {
+    // Fallback: Fetch all markets and filter client-side
+    Logger.log(`No tag ID found, fetching all markets and filtering client-side`);
 
-    // Try multiple matching strategies
-    return tags.some(tag => {
-      // Strategy 1: Exact match
-      if (tag === categoryLower) return true;
-
-      // Strategy 2: Contains
-      if (tag.includes(categoryLower)) return true;
-
-      // Strategy 3: Category contains tag
-      if (categoryLower.includes(tag) && tag.length > 3) return true;
-
-      // Strategy 4: Singular/plural matching
-      const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
-      if (tag === singularCategory || tag.includes(singularCategory)) return true;
-
-      return false;
+    const allMarkets = getMarkets({
+      closed: false,
+      active: true,
+      limit: 500
     });
-  });
 
-  Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
-
-  if (categoryMarkets.length === 0) {
-    // Log available tags
-    const allTagsSet = new Set();
-    allMarkets.forEach(m => {
-      if (m.tags && Array.isArray(m.tags)) {
-        m.tags.forEach(t => {
-          const label = typeof t === 'object' ? (t.label || t.tag || t.name) : t;
-          if (label) allTagsSet.add(label);
-        });
+    // Filter for category - use flexible matching
+    const categoryMarkets = allMarkets.filter(market => {
+      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+        return false; // Skip markets without tags
       }
+
+      const tags = market.tags.map(t => {
+        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+        return (t || '').toLowerCase();
+      }).filter(t => t !== ''); // Remove empty tags
+
+      const categoryLower = category.toLowerCase();
+
+      // Try multiple matching strategies
+      return tags.some(tag => {
+        // Strategy 1: Exact match
+        if (tag === categoryLower) return true;
+
+        // Strategy 2: Contains
+        if (tag.includes(categoryLower)) return true;
+
+        // Strategy 3: Category contains tag
+        if (categoryLower.includes(tag) && tag.length > 3) return true;
+
+        // Strategy 4: Singular/plural matching
+        const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
+        if (tag === singularCategory || tag.includes(singularCategory)) return true;
+
+        return false;
+      });
     });
-    const allTagsList = Array.from(allTagsSet).sort().slice(0, 20).join(', ');
-    Logger.log(`Available tags (first 20): ${allTagsList}`);
 
-    SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTry:\n- Click "📋 Show All Tags" to see available categories\n- Use "All Markets"\n\nFirst 20 tags:\n${allTagsList}`);
-    return;
+    Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
+
+    if (categoryMarkets.length === 0) {
+      // Log available tags
+      const allTagsSet = new Set();
+      allMarkets.forEach(m => {
+        if (m.tags && Array.isArray(m.tags)) {
+          m.tags.forEach(t => {
+            const label = typeof t === 'object' ? (t.label || t.tag || t.name) : t;
+            if (label) allTagsSet.add(label);
+          });
+        }
+      });
+      const allTagsList = Array.from(allTagsSet).sort().slice(0, 20).join(', ');
+      Logger.log(`Available tags (first 20): ${allTagsList}`);
+
+      SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTry:\n- Click "📋 Show All Tags" to see available categories\n- Use "All Markets"\n\nFirst 20 tags:\n${allTagsList}`);
+      return;
+    }
+
+    displayMarkets(sheet, categoryMarkets);
   }
-
-  displayMarkets(sheet, categoryMarkets);
 }
 
 // Specific category functions - Structured Format
