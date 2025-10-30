@@ -441,6 +441,7 @@ function displayMarketsStructured(sheet, markets) {
     'SubCategory1',
     'SubCategory2',
     'Listing',
+    'Listing ID',
     'Date',
     'Time (ET)',
     'Moneyline',
@@ -559,6 +560,7 @@ function displayMarketsStructured(sheet, markets) {
         subCategory1,
         subCategory2,
         listing,
+        market.id || '',
         eventDate,
         eventTime,
         outcomes,
@@ -686,7 +688,7 @@ function extractMatchListing(question) {
  * Create rows for a market based on outcomes
  * For soccer matches with 3 outcomes (Team1, Draw, Team2), creates 6 rows (each outcome has YES/NO)
  */
-function createMarketRows(category, subCategory1, subCategory2, listing, date, time, outcomes, prices, question) {
+function createMarketRows(category, subCategory1, subCategory2, listing, listingId, date, time, outcomes, prices, question) {
   const rows = [];
 
   // Detect market type
@@ -715,6 +717,7 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
         moneyline,
@@ -728,6 +731,7 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
         moneyline,
@@ -745,6 +749,7 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
         outcome,
@@ -764,6 +769,7 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
         outcome,
@@ -776,6 +782,7 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
         outcome,
@@ -1472,6 +1479,74 @@ function fetchElectionsOriginal() { fetchCategoryOriginal('Elections'); }
 function fetchMentionsOriginal() { fetchCategoryOriginal('Mentions'); }
 
 /**
+ * Fetch NBA listings for October 30, 2025
+ */
+function fetchNBAOct30() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
+
+  Logger.log('Fetching NBA markets for October 30, 2025');
+
+  // Fetch all active markets
+  const allMarkets = getMarkets({
+    closed: false,
+    active: true,
+    limit: limit
+  });
+
+  // NBA-specific keywords
+  const nbaKeywords = [
+    'NBA', 'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Knicks', 'Nets', 'Sixers', '76ers',
+    'Bucks', 'Mavericks', 'Nuggets', 'Suns', 'Clippers', 'Raptors', 'Pacers', 'Hawks',
+    'Cavaliers', 'Wizards', 'Hornets', 'Magic', 'Pistons', 'Spurs', 'Rockets', 'Grizzlies',
+    'Pelicans', 'Thunder', 'Jazz', 'Kings', 'Blazers', 'Timberwolves'
+  ];
+
+  // Target date: October 30, 2025
+  const targetDate = new Date('2025-10-30');
+  const targetDateStart = new Date(targetDate);
+  targetDateStart.setHours(0, 0, 0, 0);
+  const targetDateEnd = new Date(targetDate);
+  targetDateEnd.setHours(23, 59, 59, 999);
+
+  // Filter for NBA markets on October 30, 2025
+  const nbaMarkets = allMarkets.filter(market => {
+    const question = (market.question || '').toLowerCase();
+
+    // Check if question contains NBA keywords
+    const hasNBA = nbaKeywords.some(keyword =>
+      question.includes(keyword.toLowerCase())
+    );
+
+    if (!hasNBA) return false;
+
+    // Check if market end date is October 30, 2025
+    if (market.endDateIso || market.endDate) {
+      const endDate = new Date(market.endDateIso || market.endDate);
+
+      // Check if end date falls on October 30, 2025
+      if (endDate >= targetDateStart && endDate <= targetDateEnd) {
+        Logger.log(`✓ Matched NBA Oct 30: ${market.question.substring(0, 60)}`);
+        market._matchedCategory = 'Sports';
+        market._matchedKeywords = ['NBA', 'October 30, 2025'];
+        return true;
+      }
+    }
+
+    return false;
+  });
+
+  Logger.log(`Found ${nbaMarkets.length} NBA markets for October 30, 2025`);
+
+  if (nbaMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert(`No NBA markets found for October 30, 2025.\n\nTried ${allMarkets.length} total markets.`);
+    return;
+  }
+
+  displayMarketsStructured(sheet, nbaMarkets);
+}
+
+/**
  * Fetch all markets in structured format
  */
 function fetchMarketsStructured() {
@@ -1539,7 +1614,9 @@ function onOpen() {
       .addItem('World', 'fetchWorldStructured')
       .addItem('Economy', 'fetchEconomyStructured')
       .addItem('Elections', 'fetchElectionsStructured')
-      .addItem('Mentions', 'fetchMentionsStructured'))
+      .addItem('Mentions', 'fetchMentionsStructured')
+      .addSeparator()
+      .addItem('🏀 NBA - Oct 30, 2025', 'fetchNBAOct30'))
     .addSubMenu(ui.createMenu('Original Format')
       .addItem('All Markets', 'fetchPolymarketData')
       .addSeparator()
