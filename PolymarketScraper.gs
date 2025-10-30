@@ -1479,6 +1479,61 @@ function fetchElectionsOriginal() { fetchCategoryOriginal('Elections'); }
 function fetchMentionsOriginal() { fetchCategoryOriginal('Mentions'); }
 
 /**
+ * Fetch all NBA listings (all dates)
+ */
+function fetchAllNBA() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
+
+  Logger.log('=== Fetching ALL NBA markets ===');
+
+  // Fetch all active markets
+  const allMarkets = getMarkets({
+    closed: false,
+    active: true,
+    limit: limit
+  });
+
+  Logger.log(`Total markets fetched: ${allMarkets.length}`);
+
+  // NBA-specific keywords
+  const nbaKeywords = [
+    'nba', 'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'sixers', '76ers',
+    'bucks', 'mavericks', 'nuggets', 'suns', 'clippers', 'raptors', 'pacers', 'hawks',
+    'cavaliers', 'wizards', 'hornets', 'magic', 'pistons', 'spurs', 'rockets', 'grizzlies',
+    'pelicans', 'thunder', 'jazz', 'kings', 'blazers', 'timberwolves', 'cavs'
+  ];
+
+  // Filter for NBA markets
+  const nbaMarkets = allMarkets.filter(market => {
+    const question = (market.question || '').toLowerCase();
+    const hasNBA = nbaKeywords.some(keyword => question.includes(keyword));
+
+    if (hasNBA) {
+      Logger.log(`✓ NBA market: ${market.question.substring(0, 60)}`);
+      market._matchedCategory = 'Sports';
+      market._matchedKeywords = ['NBA'];
+      return true;
+    }
+
+    return false;
+  });
+
+  Logger.log(`=== FINAL COUNT: ${nbaMarkets.length} NBA markets found ===`);
+
+  if (nbaMarkets.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      `No NBA markets found.\n\n` +
+      `Searched ${allMarkets.length} total markets.\n\n` +
+      `Try increasing Max Entries in Settings sheet or check if NBA markets exist.`
+    );
+    return;
+  }
+
+  displayMarketsStructured(sheet, nbaMarkets);
+}
+
+/**
  * Fetch NBA listings for October 30, 2025
  */
 function fetchNBAOct30() {
@@ -1653,6 +1708,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
+    .addItem('🏀 NBA - All Games', 'fetchAllNBA')
     .addItem('🏀 NBA - Oct 30, 2025', 'fetchNBAOct30')
     .addSeparator()
     .addItem('⚙️ Set Entry Range (Min/Max)', 'setFetchLimit')
