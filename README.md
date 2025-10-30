@@ -249,10 +249,29 @@ Polymarket's free API tier allows:
 
 ## Troubleshooting
 
+### Category returns wrong markets or no results
+
+**Updated Fix (2025-10-30):** The script now uses a two-tier tag filtering approach:
+- **Tier 1**: Queries `/tags` endpoint for official tag IDs and uses them for server-side filtering
+- **Tier 2**: Falls back to client-side filtering if no tag ID found
+
+**What this fixes:**
+- ✅ No more false positives (e.g., "Caitlin Clark stalker" for Sports)
+- ✅ Uses official Polymarket tag IDs for accuracy
+- ✅ Comprehensive diagnostics when no matches found
+
+**Testing:**
+1. Click any category (Sports, Politics, etc.)
+2. Check **View → Logs** in Apps Script to see tag matching process
+3. If no results, the error message will show available tags
+
+**See:** [TAG_FILTERING_FIX.md](TAG_FILTERING_FIX.md) and [TESTING_THE_FIX.md](TESTING_THE_FIX.md)
+
 ### "No markets found"
 - Check your tag ID is correct
 - Try fetching without filters first
-- Use "Fetch Copa Libertadores" which searches by keyword
+- Click **Show Available Tags** to see official tag list
+- Click **📋 Show All Tags** to see tags from current markets
 
 ### "Error fetching data"
 - Check your internet connection
@@ -267,6 +286,13 @@ Polymarket's free API tier allows:
 - Click Polymarket → Refresh Data
 - Check if auto-refresh trigger is set up
 - Verify the script hasn't hit rate limits
+
+### Debug Functions
+
+Use these menu items for troubleshooting:
+- **🔍 Debug API Response** - Shows raw API response structure
+- **🔧 Test Market Fetch** - Tests basic market fetching
+- **📋 Show All Tags** - Lists all unique tags from current markets
 
 ## Customization
 
