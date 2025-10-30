@@ -23,11 +23,36 @@ const DEFAULT_FETCH_LIMIT = 500;
 
 // Settings sheet name and configuration
 const SETTINGS_SHEET_NAME = 'Settings';
-const SETTINGS_ROW_FETCH_LIMIT = 2; // Row number for fetch limit setting
+const SETTINGS_ROW_MIN_ENTRIES = 2; // Row number for minimum entries
+const SETTINGS_ROW_MAX_ENTRIES = 3; // Row number for maximum entries
 
 // Category keywords for filtering when tags are not available
+// Using more specific patterns to avoid false positives
 const CATEGORY_KEYWORDS = {
-  'Sports': ['championship', 'playoff', 'tournament', 'bowl', 'league', 'NBA', 'NFL', 'MLB', 'NHL', 'UFC', 'MLS', 'FIFA', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'tennis', 'golf', 'boxing', ' vs ', ' vs. ', 'Super Bowl', 'World Series', 'World Cup', 'finals', 'semifinal', 'MVP', 'quarterback', 'pitcher', 'striker', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Champions League', 'Olympics', 'athlete', 'team win', 'defeat', 'victory'],
+  'Sports': [
+    'Super Bowl', 'World Series', 'World Cup', 'Stanley Cup', 'NBA Finals', 'NBA Championship',
+    'NFL playoff', 'NFL champion', 'MLB playoff', 'NHL playoff', 'UFC champion',
+    'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Champions League',
+    'Olympics', 'Olympic', 'Formula 1', 'F1 champion', 'Grand Prix',
+    'touchdown', 'home run', 'goal scored', 'hat trick',
+    'quarterback', 'pitcher', 'striker', 'forward', 'goalkeeper',
+    'MVP award', 'Rookie of the Year', 'Cy Young',
+    'tennis', 'Wimbledon', 'US Open', 'French Open', 'Australian Open',
+    'boxing', 'heavyweight', 'UFC fight', 'knockout',
+    'soccer match', 'football match', 'basketball game', 'baseball game', 'hockey game',
+    'team to win', 'make the playoffs', 'win the division', 'win championship',
+    'Arsenal', 'Liverpool', 'Manchester', 'Barcelona', 'Real Madrid', 'Bayern',
+    'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Yankees', 'Red Sox', 'Dodgers',
+    'Patriots', 'Chiefs', 'Cowboys', '49ers', 'Eagles'
+  ],
+  // Exclusion keywords that indicate non-sports markets
+  'Sports_Exclude': [
+    'inflation', 'depeg', 'CEO', 'Coinbase', 'Bitcoin', 'Ethereum', 'crypto',
+    'Ukraine', 'Russia', 'NATO', 'troops', 'military', 'war',
+    'vaccine', 'RFK', 'health', 'FDA', 'medicine',
+    'stock price', 'market cap', 'earnings', 'revenue', 'competitor raise',
+    'stalker', 'guilty', 'lawsuit', 'trial', 'plea'
+  ],
   'Politics': ['election', 'vote', 'president', 'senate', 'congress', 'governor', 'political', 'party', 'democrat', 'republican', 'campaign', 'ballot', 'poll'],
   'Finance': ['stock', 'market', 'price', 'trading', 'investment', 'S&P', 'Dow', 'NASDAQ', 'bond', 'interest rate', 'Fed', 'GDP', 'inflation'],
   'Crypto': ['Bitcoin', 'BTC', 'Ethereum', 'ETH', 'crypto', 'blockchain', 'NFT', 'DeFi', 'token', 'coin', 'Solana', 'Cardano'],
@@ -68,14 +93,18 @@ function ensureSettingsSheet() {
     settingsSheet.getRange('A1').setValue('Setting').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
     settingsSheet.getRange('B1').setValue('Value').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
 
-    settingsSheet.getRange('A2').setValue('Fetch Limit');
-    settingsSheet.getRange('B2').setValue(DEFAULT_FETCH_LIMIT);
-    settingsSheet.getRange('B2').setNote(`Number of markets to fetch per request.\nDefault: ${DEFAULT_FETCH_LIMIT}\nMax: 1000`);
+    settingsSheet.getRange('A2').setValue('Min Entries');
+    settingsSheet.getRange('B2').setValue(1);
+    settingsSheet.getRange('B2').setNote('Minimum number of markets to display.\nDefault: 1\nShows warning if fewer results found.');
+
+    settingsSheet.getRange('A3').setValue('Max Entries');
+    settingsSheet.getRange('B3').setValue(DEFAULT_FETCH_LIMIT);
+    settingsSheet.getRange('B3').setNote(`Maximum number of markets to fetch from API.\nDefault: ${DEFAULT_FETCH_LIMIT}\nAPI Max: 1000`);
 
     // Format the sheet
     settingsSheet.setColumnWidth(1, 200);
     settingsSheet.setColumnWidth(2, 150);
-    settingsSheet.getRange('B2').setFontWeight('bold').setBackground('#fff2cc');
+    settingsSheet.getRange('B2:B3').setFontWeight('bold').setBackground('#fff2cc');
 
     Logger.log('Created Settings sheet with default configuration');
   }
@@ -84,90 +113,133 @@ function ensureSettingsSheet() {
 }
 
 /**
- * Get the fetch limit from Settings sheet, or use default
- * @returns {number} The number of markets to fetch
+ * Get the min/max entries from Settings sheet
+ * @returns {Object} {min: number, max: number}
  */
-function getFetchLimit() {
+function getEntryRange() {
   try {
     const settingsSheet = ensureSettingsSheet();
-    const limitValue = settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).getValue();
+    const minValue = settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).getValue();
+    const maxValue = settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).getValue();
 
-    if (limitValue && typeof limitValue === 'number' && limitValue > 0) {
-      Logger.log(`Using user-specified limit from Settings sheet: ${limitValue}`);
-      return Math.min(limitValue, 1000); // Cap at 1000 to avoid API issues
-    }
+    const min = (minValue && typeof minValue === 'number' && minValue > 0) ? minValue : 1;
+    const max = (maxValue && typeof maxValue === 'number' && maxValue > 0) ? Math.min(maxValue, 1000) : DEFAULT_FETCH_LIMIT;
+
+    Logger.log(`Entry range: ${min} - ${max}`);
+    return { min, max };
   } catch (e) {
-    Logger.log('Error reading limit from Settings sheet: ' + e);
+    Logger.log('Error reading entry range from Settings sheet: ' + e);
+    return { min: 1, max: DEFAULT_FETCH_LIMIT };
   }
-
-  Logger.log(`Using default limit: ${DEFAULT_FETCH_LIMIT}`);
-  return DEFAULT_FETCH_LIMIT;
 }
 
 /**
- * Set the fetch limit via UI prompt
- * Stores the value in Settings sheet
+ * Get the fetch limit from Settings sheet (max entries)
+ * @returns {number} The maximum number of markets to fetch
  */
-function setFetchLimit() {
+function getFetchLimit() {
+  const range = getEntryRange();
+  return range.max;
+}
+
+/**
+ * Set the entry range (min/max) via UI prompt
+ * Stores values in Settings sheet
+ */
+function setEntryRange() {
   const ui = SpreadsheetApp.getUi();
   const settingsSheet = ensureSettingsSheet();
 
-  const currentLimit = getFetchLimit();
+  const currentRange = getEntryRange();
 
-  const response = ui.prompt(
-    'Set Fetch Limit',
-    `How many markets do you want to fetch?\n\nCurrent limit: ${currentLimit}\nRecommended: 100-1000\n\nEnter a number:`,
+  // Ask for max entries
+  const maxResponse = ui.prompt(
+    'Set Maximum Entries',
+    `Maximum number of markets to fetch from API?\n\nCurrent: ${currentRange.max}\nRecommended: 100-1000\n\nEnter a number:`,
     ui.ButtonSet.OK_CANCEL
   );
 
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const input = response.getResponseText();
-    const limit = parseInt(input, 10);
+  if (maxResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
 
-    if (isNaN(limit) || limit <= 0) {
-      ui.alert('Invalid Input', 'Please enter a positive number.', ui.ButtonSet.OK);
+  const maxInput = maxResponse.getResponseText();
+  const max = parseInt(maxInput, 10);
+
+  if (isNaN(max) || max <= 0) {
+    ui.alert('Invalid Input', 'Please enter a positive number.', ui.ButtonSet.OK);
+    return;
+  }
+
+  if (max > 1000) {
+    const confirm = ui.alert(
+      'Large Maximum Warning',
+      `You entered ${max}, but the API may not return more than 1000 results.\n\nContinue with ${max}?`,
+      ui.ButtonSet.YES_NO
+    );
+
+    if (confirm === ui.Button.NO) {
       return;
     }
-
-    if (limit > 1000) {
-      const confirm = ui.alert(
-        'Large Limit Warning',
-        `You entered ${limit}, but the API may not return more than 1000 results.\n\nContinue with ${limit}?`,
-        ui.ButtonSet.YES_NO
-      );
-
-      if (confirm === ui.Button.NO) {
-        return;
-      }
-    }
-
-    // Save to Settings sheet
-    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setValue(limit);
-    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setFontWeight('bold').setBackground('#fff2cc');
-
-    ui.alert('Fetch Limit Updated', `Fetch limit set to ${limit} markets.\n\nThis value is saved in the Settings sheet and will be used for all future fetches.`, ui.ButtonSet.OK);
-
-    Logger.log(`Fetch limit updated to: ${limit}`);
   }
+
+  // Ask for min entries
+  const minResponse = ui.prompt(
+    'Set Minimum Entries',
+    `Minimum number of markets to display?\n\nCurrent: ${currentRange.min}\nUsually 1 (no minimum)\n\nEnter a number:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (minResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const minInput = minResponse.getResponseText();
+  const min = parseInt(minInput, 10);
+
+  if (isNaN(min) || min < 0) {
+    ui.alert('Invalid Input', 'Please enter a non-negative number.', ui.ButtonSet.OK);
+    return;
+  }
+
+  if (min > max) {
+    ui.alert('Invalid Range', `Minimum (${min}) cannot be greater than maximum (${max}).`, ui.ButtonSet.OK);
+    return;
+  }
+
+  // Save to Settings sheet
+  settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).setValue(min);
+  settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).setValue(max);
+  settingsSheet.getRange('B2:B3').setFontWeight('bold').setBackground('#fff2cc');
+
+  ui.alert('Entry Range Updated', `Entry range set to ${min} - ${max} markets.\n\nThese values are saved in the Settings sheet.`, ui.ButtonSet.OK);
+
+  Logger.log(`Entry range updated to: ${min} - ${max}`);
+}
+
+// Keep old function name for backwards compatibility
+function setFetchLimit() {
+  setEntryRange();
 }
 
 /**
- * Reset fetch limit to default
+ * Reset entry range to defaults
  */
 function resetFetchLimit() {
   const ui = SpreadsheetApp.getUi();
   const settingsSheet = ensureSettingsSheet();
 
   const response = ui.alert(
-    'Reset Fetch Limit',
-    `Reset fetch limit to default (${DEFAULT_FETCH_LIMIT})?`,
+    'Reset Entry Range',
+    `Reset to defaults?\nMin: 1\nMax: ${DEFAULT_FETCH_LIMIT}`,
     ui.ButtonSet.YES_NO
   );
 
   if (response === ui.Button.YES) {
-    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setValue(DEFAULT_FETCH_LIMIT);
-    ui.alert('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
-    Logger.log('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
+    settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).setValue(1);
+    settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).setValue(DEFAULT_FETCH_LIMIT);
+    ui.alert('Entry range reset to defaults (1 - ' + DEFAULT_FETCH_LIMIT + ')');
+    Logger.log('Entry range reset to defaults');
   }
 }
 
@@ -335,8 +407,7 @@ function displayMarketsStructured(sheet, markets) {
     'SubCategory2',
     'Listing',
     'Date',
-    'Time',
-    'Timezone',
+    'Time (ET)',
     'Moneyline',
     'Outcome',
     'Price'
@@ -455,7 +526,6 @@ function displayMarketsStructured(sheet, markets) {
         listing,
         eventDate,
         eventTime,
-        timezone,
         outcomes,
         prices,
         market.question
@@ -581,7 +651,7 @@ function extractMatchListing(question) {
  * Create rows for a market based on outcomes
  * For soccer matches with 3 outcomes (Team1, Draw, Team2), creates 6 rows (each outcome has YES/NO)
  */
-function createMarketRows(category, subCategory1, subCategory2, listing, date, time, timezone, outcomes, prices, question) {
+function createMarketRows(category, subCategory1, subCategory2, listing, date, time, outcomes, prices, question) {
   const rows = [];
 
   // Detect market type
@@ -612,7 +682,6 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         listing,
         date,
         time,
-        timezone,
         moneyline,
         'YES',
         price
@@ -626,7 +695,6 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         listing,
         date,
         time,
-        timezone,
         moneyline,
         'NO',
         inversePrice
@@ -644,7 +712,6 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         listing,
         date,
         time,
-        timezone,
         outcome,
         'YES',
         price
@@ -664,7 +731,6 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         listing,
         date,
         time,
-        timezone,
         outcome,
         'YES',
         price
@@ -677,7 +743,6 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         listing,
         date,
         time,
-        timezone,
         outcome,
         'NO',
         inversePrice
@@ -726,12 +791,17 @@ function formatDate(date) {
 }
 
 /**
- * Format time as HH:MM (24-hour)
+ * Format time as H:MM AM/PM
  */
 function formatTime(date) {
-  const hours = String(date.getUTCHours()).padStart(2, '0');
+  let hours = date.getUTCHours();
   const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
+
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // Convert 0 to 12 for midnight
+
+  return `${hours}:${minutes} ${ampm}`;
 }
 
 /**
@@ -974,6 +1044,7 @@ function displayMarkets(sheet, markets) {
  */
 function filterByKeywords(markets, category) {
   const keywords = CATEGORY_KEYWORDS[category];
+  const excludeKeywords = CATEGORY_KEYWORDS[category + '_Exclude'] || [];
 
   if (!keywords || keywords.length === 0) {
     Logger.log(`No keywords defined for category: ${category}`);
@@ -981,17 +1052,30 @@ function filterByKeywords(markets, category) {
   }
 
   Logger.log(`Filtering by keywords for ${category}: ${keywords.slice(0, 10).join(', ')}...`);
+  if (excludeKeywords.length > 0) {
+    Logger.log(`Exclusion keywords: ${excludeKeywords.slice(0, 10).join(', ')}...`);
+  }
 
   const filtered = markets.filter(market => {
+    // Only search in question field to reduce false positives
     const question = (market.question || '').toLowerCase();
-    const description = (market.description || '').toLowerCase();
-    const combinedText = question + ' ' + description;
 
-    // Check if any keyword matches
+    // First check exclusion keywords - if any match, skip this market
+    if (excludeKeywords.length > 0) {
+      const hasExclusion = excludeKeywords.some(keyword => {
+        return question.includes(keyword.toLowerCase());
+      });
+
+      if (hasExclusion) {
+        return false; // Skip this market
+      }
+    }
+
+    // Check if any inclusion keyword matches
     const matchedKeywords = [];
     const hasKeyword = keywords.some(keyword => {
       const keywordLower = keyword.toLowerCase();
-      if (combinedText.includes(keywordLower)) {
+      if (question.includes(keywordLower)) {
         matchedKeywords.push(keyword);
         return true;
       }
@@ -999,7 +1083,7 @@ function filterByKeywords(markets, category) {
     });
 
     if (hasKeyword) {
-      Logger.log(`✓ Matched (${matchedKeywords.join(', ')}): ${market.question.substring(0, 60)}`);
+      Logger.log(`✓ Matched (${matchedKeywords.slice(0, 3).join(', ')}): ${market.question.substring(0, 60)}`);
       // Add the matched category to the market object
       market._matchedCategory = category;
       market._matchedKeywords = matchedKeywords;
@@ -1439,8 +1523,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
-    .addItem('⚙️ Set Fetch Limit', 'setFetchLimit')
-    .addItem('🔄 Reset Fetch Limit', 'resetFetchLimit')
+    .addItem('⚙️ Set Entry Range (Min/Max)', 'setFetchLimit')
+    .addItem('🔄 Reset Entry Range', 'resetFetchLimit')
     .addSeparator()
     .addItem('🔧 Test Market Fetch', 'testMarketFetch')
     .addItem('🔍 Debug API Response', 'debugMarketResponse')
