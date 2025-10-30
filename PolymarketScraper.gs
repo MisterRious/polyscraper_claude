@@ -21,12 +21,13 @@ const POLYMARKET_API_BASE = 'https://gamma-api.polymarket.com';
 // Default fetch limit
 const DEFAULT_FETCH_LIMIT = 500;
 
-// Cell location for user-specified fetch limit
-const LIMIT_CELL = 'B1';
+// Settings sheet name and configuration
+const SETTINGS_SHEET_NAME = 'Settings';
+const SETTINGS_ROW_FETCH_LIMIT = 2; // Row number for fetch limit setting
 
 // Category keywords for filtering when tags are not available
 const CATEGORY_KEYWORDS = {
-  'Sports': ['win', 'championship', 'playoff', 'tournament', 'game', 'match', 'season', 'bowl', 'cup', 'league', 'NBA', 'NFL', 'MLB', 'NHL', 'UFC', 'FIFA', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'vs', 'points', 'score', 'finals', 'semifinal', 'champion'],
+  'Sports': ['championship', 'playoff', 'tournament', 'bowl', 'league', 'NBA', 'NFL', 'MLB', 'NHL', 'UFC', 'MLS', 'FIFA', 'soccer', 'football', 'basketball', 'baseball', 'hockey', 'tennis', 'golf', 'boxing', ' vs ', ' vs. ', 'Super Bowl', 'World Series', 'World Cup', 'finals', 'semifinal', 'MVP', 'quarterback', 'pitcher', 'striker', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Champions League', 'Olympics', 'athlete', 'team win', 'defeat', 'victory'],
   'Politics': ['election', 'vote', 'president', 'senate', 'congress', 'governor', 'political', 'party', 'democrat', 'republican', 'campaign', 'ballot', 'poll'],
   'Finance': ['stock', 'market', 'price', 'trading', 'investment', 'S&P', 'Dow', 'NASDAQ', 'bond', 'interest rate', 'Fed', 'GDP', 'inflation'],
   'Crypto': ['Bitcoin', 'BTC', 'Ethereum', 'ETH', 'crypto', 'blockchain', 'NFT', 'DeFi', 'token', 'coin', 'Solana', 'Cardano'],
@@ -52,20 +53,51 @@ const TAGS = {
 // ============================================
 
 /**
- * Get the fetch limit from cell B1, or use default
+ * Ensure the Settings sheet exists and is properly formatted
+ * @returns {Sheet} The Settings sheet
+ */
+function ensureSettingsSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
+
+  if (!settingsSheet) {
+    // Create the Settings sheet
+    settingsSheet = spreadsheet.insertSheet(SETTINGS_SHEET_NAME);
+
+    // Set up headers and initial values
+    settingsSheet.getRange('A1').setValue('Setting').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+    settingsSheet.getRange('B1').setValue('Value').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+
+    settingsSheet.getRange('A2').setValue('Fetch Limit');
+    settingsSheet.getRange('B2').setValue(DEFAULT_FETCH_LIMIT);
+    settingsSheet.getRange('B2').setNote(`Number of markets to fetch per request.\nDefault: ${DEFAULT_FETCH_LIMIT}\nMax: 1000`);
+
+    // Format the sheet
+    settingsSheet.setColumnWidth(1, 200);
+    settingsSheet.setColumnWidth(2, 150);
+    settingsSheet.getRange('B2').setFontWeight('bold').setBackground('#fff2cc');
+
+    Logger.log('Created Settings sheet with default configuration');
+  }
+
+  return settingsSheet;
+}
+
+/**
+ * Get the fetch limit from Settings sheet, or use default
  * @returns {number} The number of markets to fetch
  */
 function getFetchLimit() {
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const limitValue = sheet.getRange(LIMIT_CELL).getValue();
+    const settingsSheet = ensureSettingsSheet();
+    const limitValue = settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).getValue();
 
     if (limitValue && typeof limitValue === 'number' && limitValue > 0) {
-      Logger.log(`Using user-specified limit from ${LIMIT_CELL}: ${limitValue}`);
+      Logger.log(`Using user-specified limit from Settings sheet: ${limitValue}`);
       return Math.min(limitValue, 1000); // Cap at 1000 to avoid API issues
     }
   } catch (e) {
-    Logger.log('Error reading limit from cell: ' + e);
+    Logger.log('Error reading limit from Settings sheet: ' + e);
   }
 
   Logger.log(`Using default limit: ${DEFAULT_FETCH_LIMIT}`);
@@ -74,11 +106,11 @@ function getFetchLimit() {
 
 /**
  * Set the fetch limit via UI prompt
- * Stores the value in cell B1
+ * Stores the value in Settings sheet
  */
 function setFetchLimit() {
   const ui = SpreadsheetApp.getUi();
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const settingsSheet = ensureSettingsSheet();
 
   const currentLimit = getFetchLimit();
 
@@ -109,14 +141,11 @@ function setFetchLimit() {
       }
     }
 
-    // Save to cell B1
-    sheet.getRange(LIMIT_CELL).setValue(limit);
-    sheet.getRange(LIMIT_CELL).setNote(`Fetch limit: ${limit} markets\nSet via Polymarket > Set Fetch Limit`);
+    // Save to Settings sheet
+    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setValue(limit);
+    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setFontWeight('bold').setBackground('#fff2cc');
 
-    // Format the cell
-    sheet.getRange(LIMIT_CELL).setFontWeight('bold').setBackground('#ffe599');
-
-    ui.alert('Fetch Limit Updated', `Fetch limit set to ${limit} markets.\n\nThis value is saved in cell ${LIMIT_CELL} and will be used for all future fetches.`, ui.ButtonSet.OK);
+    ui.alert('Fetch Limit Updated', `Fetch limit set to ${limit} markets.\n\nThis value is saved in the Settings sheet and will be used for all future fetches.`, ui.ButtonSet.OK);
 
     Logger.log(`Fetch limit updated to: ${limit}`);
   }
@@ -127,7 +156,7 @@ function setFetchLimit() {
  */
 function resetFetchLimit() {
   const ui = SpreadsheetApp.getUi();
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const settingsSheet = ensureSettingsSheet();
 
   const response = ui.alert(
     'Reset Fetch Limit',
@@ -136,7 +165,7 @@ function resetFetchLimit() {
   );
 
   if (response === ui.Button.YES) {
-    sheet.getRange(LIMIT_CELL).clear();
+    settingsSheet.getRange(SETTINGS_ROW_FETCH_LIMIT, 2).setValue(DEFAULT_FETCH_LIMIT);
     ui.alert('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
     Logger.log('Fetch limit reset to default: ' + DEFAULT_FETCH_LIMIT);
   }
@@ -345,12 +374,22 @@ function displayMarketsStructured(sheet, markets) {
 
   validMarkets.forEach((market, index) => {
     try {
-      // Extract categories from tags
+      // Extract categories from tags or matched category
       let category = '';
       let subCategory1 = '';
       let subCategory2 = '';
 
-      if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
+      // First check if this market was matched by keyword filtering
+      if (market._matchedCategory) {
+        category = market._matchedCategory;
+        // Try to infer subcategories from matched keywords if available
+        if (market._matchedKeywords && market._matchedKeywords.length > 0) {
+          // Use matched keywords as hints for subcategories
+          subCategory1 = market._matchedKeywords[0];
+        }
+      }
+      // Then try to extract from tags
+      else if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
         // Extract tag labels
         const tagLabels = market.tags.map(tag => {
           if (typeof tag === 'object') {
@@ -371,18 +410,9 @@ function displayMarketsStructured(sheet, markets) {
         }
       }
 
-      // If no tags, try to infer from question/description
+      // If still no category, use generic fallback
       if (!category) {
-        const question = (market.question || '').toLowerCase();
-        if (question.includes('copa libertadores') || question.includes('soccer') || question.includes('football')) {
-          category = 'Sports';
-          subCategory1 = 'Soccer';
-          if (question.includes('copa libertadores')) {
-            subCategory2 = 'Copa Libertadores';
-          }
-        } else {
-          category = 'Markets'; // Generic fallback
-        }
+        category = 'Markets';
       }
 
       // Extract listing (match name, team abbreviations)
@@ -940,7 +970,7 @@ function displayMarkets(sheet, markets) {
  * Filter markets by category keywords when tags are not available
  * @param {Array} markets - Array of market objects
  * @param {string} category - Category name to filter by
- * @returns {Array} Filtered markets
+ * @returns {Array} Filtered markets with _matchedCategory field added
  */
 function filterByKeywords(markets, category) {
   const keywords = CATEGORY_KEYWORDS[category];
@@ -950,7 +980,7 @@ function filterByKeywords(markets, category) {
     return markets;
   }
 
-  Logger.log(`Filtering by keywords for ${category}: ${keywords.join(', ')}`);
+  Logger.log(`Filtering by keywords for ${category}: ${keywords.slice(0, 10).join(', ')}...`);
 
   const filtered = markets.filter(market => {
     const question = (market.question || '').toLowerCase();
@@ -958,13 +988,21 @@ function filterByKeywords(markets, category) {
     const combinedText = question + ' ' + description;
 
     // Check if any keyword matches
+    const matchedKeywords = [];
     const hasKeyword = keywords.some(keyword => {
       const keywordLower = keyword.toLowerCase();
-      return combinedText.includes(keywordLower);
+      if (combinedText.includes(keywordLower)) {
+        matchedKeywords.push(keyword);
+        return true;
+      }
+      return false;
     });
 
     if (hasKeyword) {
-      Logger.log(`✓ Matched: ${market.question.substring(0, 80)}`);
+      Logger.log(`✓ Matched (${matchedKeywords.join(', ')}): ${market.question.substring(0, 60)}`);
+      // Add the matched category to the market object
+      market._matchedCategory = category;
+      market._matchedKeywords = matchedKeywords;
     }
 
     return hasKeyword;
