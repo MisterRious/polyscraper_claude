@@ -18,12 +18,265 @@
 // Polymarket API base URL
 const POLYMARKET_API_BASE = 'https://gamma-api.polymarket.com';
 
+// Default fetch limit
+const DEFAULT_FETCH_LIMIT = 500;
+
+// Settings sheet name and configuration
+const SETTINGS_SHEET_NAME = 'Settings';
+const SETTINGS_ROW_MIN_ENTRIES = 2; // Row number for minimum entries
+const SETTINGS_ROW_MAX_ENTRIES = 3; // Row number for maximum entries
+
+// Category keywords for filtering when tags are not available
+// Using specific patterns with exclusions to avoid false positives
+const CATEGORY_KEYWORDS = {
+  'Sports': [
+    // Major Championships & Events
+    'Super Bowl', 'World Series', 'World Cup', 'Stanley Cup', 'NBA Finals', 'NBA Championship',
+    'NFL playoff', 'NFL champion', 'MLB playoff', 'NHL playoff', 'NHL champion', 'UFC champion',
+    'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Champions League',
+    'Olympics', 'Olympic', 'Formula 1', 'Drivers Champion', "Drivers' Champion", 'F1 World',
+    'Grand Prix', 'Grand Slam',
+
+    // Sports-specific actions & terms (unambiguous)
+    'touchdown', 'home run', 'goal scored', 'hat trick', 'strikeout',
+    'quarterback', 'pitcher', 'striker', 'goalie', 'goalkeeper', 'running back',
+
+    // Awards & Achievements
+    'MVP', 'Rookie of the Year', 'Cy Young', 'Heisman', 'Ballon d\'Or',
+
+    // Individual Sports
+    'tennis', 'Wimbledon', 'US Open tennis', 'French Open', 'Australian Open',
+    'boxing match', 'heavyweight', 'UFC fight', 'knockout', 'KO',
+    'golf tournament', 'PGA', 'Masters golf',
+
+    // Team Sports & Leagues (with context)
+    'NBA season', 'NFL season', 'MLB season', 'NHL season', 'MLS season',
+    'basketball season', 'football season', 'baseball season', 'hockey season', 'soccer season',
+    'win the title', 'win championship', 'win the league',
+    'make the playoffs', 'playoff berth', 'win the division',
+
+    // Specific Teams (NBA)
+    'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Knicks', 'Nets', 'Sixers', '76ers',
+    'Bucks', 'Mavericks', 'Nuggets', 'Suns', 'Clippers', 'Raptors',
+
+    // Specific Teams (NFL)
+    'Patriots', 'Chiefs', 'Cowboys', '49ers', 'Eagles', 'Packers', 'Steelers', 'Ravens',
+    'Bills', 'Dolphins', 'Jets', 'Bengals', 'Browns', 'Rams', 'Seahawks',
+
+    // Specific Teams (MLB)
+    'Yankees', 'Red Sox', 'Dodgers', 'Blue Jays', 'Mets', 'Cubs', 'Giants', 'Cardinals',
+    'Astros', 'Braves', 'Phillies',
+
+    // Specific Teams (Soccer/Football)
+    'Arsenal', 'Liverpool', 'Manchester United', 'Manchester City', 'Chelsea', 'Tottenham',
+    'Barcelona', 'Real Madrid', 'Bayern Munich', 'PSG', 'Juventus', 'AC Milan', 'Inter Milan',
+
+    // Racing
+    'Verstappen', 'Hamilton', 'Leclerc', 'NASCAR', 'IndyCar', 'F1 race',
+
+    // General sports terms (safe)
+    'athlete', 'player', 'coach', 'manager', 'draft pick', 'transfer', 'signing'
+  ],
+  // Exclusion keywords that indicate non-sports markets
+  'Sports_Exclude': [
+    'inflation', 'depeg', 'CEO', 'Coinbase', 'Bitcoin', 'Ethereum', 'crypto',
+    'Ukraine', 'Russia', 'NATO', 'troops', 'military', 'war',
+    'vaccine', 'RFK', 'health', 'FDA', 'medicine',
+    'stock price', 'market cap', 'earnings', 'revenue', 'competitor raise',
+    'stalker', 'guilty', 'lawsuit', 'trial', 'plea'
+  ],
+  'Politics': ['election', 'vote', 'president', 'senate', 'congress', 'governor', 'political', 'party', 'democrat', 'republican', 'campaign', 'ballot', 'poll'],
+  'Finance': ['stock', 'market', 'price', 'trading', 'investment', 'S&P', 'Dow', 'NASDAQ', 'bond', 'interest rate', 'Fed', 'GDP', 'inflation'],
+  'Crypto': ['Bitcoin', 'BTC', 'Ethereum', 'ETH', 'crypto', 'blockchain', 'NFT', 'DeFi', 'token', 'coin', 'Solana', 'Cardano'],
+  'Geopolitics': ['war', 'conflict', 'treaty', 'sanctions', 'military', 'invasion', 'China', 'Russia', 'NATO', 'UN', 'international'],
+  'Earnings': ['earnings', 'revenue', 'profit', 'EPS', 'quarterly', 'fiscal', 'Q1', 'Q2', 'Q3', 'Q4'],
+  'Tech': ['Apple', 'Google', 'Microsoft', 'Amazon', 'Meta', 'Tesla', 'AI', 'software', 'hardware', 'launch', 'release'],
+  'Culture': ['movie', 'film', 'Oscar', 'Emmy', 'Grammy', 'music', 'album', 'celebrity', 'award', 'box office'],
+  'World': ['country', 'global', 'world', 'international', 'nation'],
+  'Economy': ['recession', 'unemployment', 'jobs', 'economic', 'GDP', 'growth', 'inflation', 'CPI'],
+  'Elections': ['election', '2024', '2025', 'primary', 'nominee', 'candidate', 'electoral'],
+  'Mentions': ['mention', 'tweet', 'social media', 'trending', 'viral']
+};
+
 // Common tag IDs (you may need to discover these for your specific needs)
 const TAGS = {
   // Add tag IDs here after discovering them
   // Example: SOCCER: '12345',
   // COPA_LIBERTADORES: '67890'
 };
+
+// ============================================
+// CONFIGURATION FUNCTIONS
+// ============================================
+
+/**
+ * Ensure the Settings sheet exists and is properly formatted
+ * @returns {Sheet} The Settings sheet
+ */
+function ensureSettingsSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
+
+  if (!settingsSheet) {
+    // Create the Settings sheet
+    settingsSheet = spreadsheet.insertSheet(SETTINGS_SHEET_NAME);
+
+    // Set up headers and initial values
+    settingsSheet.getRange('A1').setValue('Setting').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+    settingsSheet.getRange('B1').setValue('Value').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+    settingsSheet.getRange('C1').setValue('Description').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+
+    settingsSheet.getRange('A2').setValue('Min Entries');
+    settingsSheet.getRange('B2').setValue(1);
+    settingsSheet.getRange('C2').setValue('Minimum number of markets to display (usually 1)');
+
+    settingsSheet.getRange('A3').setValue('Max Entries');
+    settingsSheet.getRange('B3').setValue(DEFAULT_FETCH_LIMIT);
+    settingsSheet.getRange('C3').setValue(`Maximum number of markets to fetch from API (max: 1000)`);
+
+    // Format the sheet
+    settingsSheet.setColumnWidth(1, 150);
+    settingsSheet.setColumnWidth(2, 100);
+    settingsSheet.setColumnWidth(3, 350);
+    settingsSheet.getRange('B2:B3').setFontWeight('bold').setBackground('#fff2cc');
+    settingsSheet.getRange('A:C').setVerticalAlignment('middle');
+
+    Logger.log('Created Settings sheet with default configuration');
+  }
+
+  return settingsSheet;
+}
+
+/**
+ * Get the min/max entries from Settings sheet
+ * @returns {Object} {min: number, max: number}
+ */
+function getEntryRange() {
+  try {
+    const settingsSheet = ensureSettingsSheet();
+    const minValue = settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).getValue();
+    const maxValue = settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).getValue();
+
+    const min = (minValue && typeof minValue === 'number' && minValue > 0) ? minValue : 1;
+    const max = (maxValue && typeof maxValue === 'number' && maxValue > 0) ? Math.min(maxValue, 1000) : DEFAULT_FETCH_LIMIT;
+
+    Logger.log(`Entry range: ${min} - ${max}`);
+    return { min, max };
+  } catch (e) {
+    Logger.log('Error reading entry range from Settings sheet: ' + e);
+    return { min: 1, max: DEFAULT_FETCH_LIMIT };
+  }
+}
+
+/**
+ * Get the fetch limit from Settings sheet (max entries)
+ * @returns {number} The maximum number of markets to fetch
+ */
+function getFetchLimit() {
+  const range = getEntryRange();
+  return range.max;
+}
+
+/**
+ * Set the entry range (min/max) via UI prompt
+ * Stores values in Settings sheet
+ */
+function setEntryRange() {
+  const ui = SpreadsheetApp.getUi();
+  const settingsSheet = ensureSettingsSheet();
+
+  const currentRange = getEntryRange();
+
+  // Ask for max entries
+  const maxResponse = ui.prompt(
+    'Set Maximum Entries',
+    `Maximum number of markets to fetch from API?\n\nCurrent: ${currentRange.max}\nRecommended: 100-1000\n\nEnter a number:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (maxResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const maxInput = maxResponse.getResponseText();
+  const max = parseInt(maxInput, 10);
+
+  if (isNaN(max) || max <= 0) {
+    ui.alert('Invalid Input', 'Please enter a positive number.', ui.ButtonSet.OK);
+    return;
+  }
+
+  if (max > 1000) {
+    const confirm = ui.alert(
+      'Large Maximum Warning',
+      `You entered ${max}, but the API may not return more than 1000 results.\n\nContinue with ${max}?`,
+      ui.ButtonSet.YES_NO
+    );
+
+    if (confirm === ui.Button.NO) {
+      return;
+    }
+  }
+
+  // Ask for min entries
+  const minResponse = ui.prompt(
+    'Set Minimum Entries',
+    `Minimum number of markets to display?\n\nCurrent: ${currentRange.min}\nUsually 1 (no minimum)\n\nEnter a number:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (minResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const minInput = minResponse.getResponseText();
+  const min = parseInt(minInput, 10);
+
+  if (isNaN(min) || min < 0) {
+    ui.alert('Invalid Input', 'Please enter a non-negative number.', ui.ButtonSet.OK);
+    return;
+  }
+
+  if (min > max) {
+    ui.alert('Invalid Range', `Minimum (${min}) cannot be greater than maximum (${max}).`, ui.ButtonSet.OK);
+    return;
+  }
+
+  // Save to Settings sheet
+  settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).setValue(min);
+  settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).setValue(max);
+  settingsSheet.getRange('B2:B3').setFontWeight('bold').setBackground('#fff2cc');
+
+  ui.alert('Entry Range Updated', `Entry range set to ${min} - ${max} markets.\n\nThese values are saved in the Settings sheet.`, ui.ButtonSet.OK);
+
+  Logger.log(`Entry range updated to: ${min} - ${max}`);
+}
+
+// Keep old function name for backwards compatibility
+function setFetchLimit() {
+  setEntryRange();
+}
+
+/**
+ * Reset entry range to defaults
+ */
+function resetFetchLimit() {
+  const ui = SpreadsheetApp.getUi();
+  const settingsSheet = ensureSettingsSheet();
+
+  const response = ui.alert(
+    'Reset Entry Range',
+    `Reset to defaults?\nMin: 1\nMax: ${DEFAULT_FETCH_LIMIT}`,
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response === ui.Button.YES) {
+    settingsSheet.getRange(SETTINGS_ROW_MIN_ENTRIES, 2).setValue(1);
+    settingsSheet.getRange(SETTINGS_ROW_MAX_ENTRIES, 2).setValue(DEFAULT_FETCH_LIMIT);
+    ui.alert('Entry range reset to defaults (1 - ' + DEFAULT_FETCH_LIMIT + ')');
+    Logger.log('Entry range reset to defaults');
+  }
+}
 
 // ============================================
 // MAIN FUNCTIONS
@@ -188,9 +441,9 @@ function displayMarketsStructured(sheet, markets) {
     'SubCategory1',
     'SubCategory2',
     'Listing',
+    'Listing ID',
     'Date',
-    'Time',
-    'Timezone',
+    'Time (ET)',
     'Moneyline',
     'Outcome',
     'Price'
@@ -228,12 +481,22 @@ function displayMarketsStructured(sheet, markets) {
 
   validMarkets.forEach((market, index) => {
     try {
-      // Extract categories from tags
+      // Extract categories from tags or matched category
       let category = '';
       let subCategory1 = '';
       let subCategory2 = '';
 
-      if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
+      // First check if this market was matched by keyword filtering
+      if (market._matchedCategory) {
+        category = market._matchedCategory;
+        // Try to infer subcategories from matched keywords if available
+        if (market._matchedKeywords && market._matchedKeywords.length > 0) {
+          // Use matched keywords as hints for subcategories
+          subCategory1 = market._matchedKeywords[0];
+        }
+      }
+      // Then try to extract from tags
+      else if (market.tags && Array.isArray(market.tags) && market.tags.length > 0) {
         // Extract tag labels
         const tagLabels = market.tags.map(tag => {
           if (typeof tag === 'object') {
@@ -254,18 +517,9 @@ function displayMarketsStructured(sheet, markets) {
         }
       }
 
-      // If no tags, try to infer from question/description
+      // If still no category, use generic fallback
       if (!category) {
-        const question = (market.question || '').toLowerCase();
-        if (question.includes('copa libertadores') || question.includes('soccer') || question.includes('football')) {
-          category = 'Sports';
-          subCategory1 = 'Soccer';
-          if (question.includes('copa libertadores')) {
-            subCategory2 = 'Copa Libertadores';
-          }
-        } else {
-          category = 'Markets'; // Generic fallback
-        }
+        category = 'Markets';
       }
 
       // Extract listing (match name, team abbreviations)
@@ -306,9 +560,9 @@ function displayMarketsStructured(sheet, markets) {
         subCategory1,
         subCategory2,
         listing,
+        market.id || '',
         eventDate,
         eventTime,
-        timezone,
         outcomes,
         prices,
         market.question
@@ -434,7 +688,7 @@ function extractMatchListing(question) {
  * Create rows for a market based on outcomes
  * For soccer matches with 3 outcomes (Team1, Draw, Team2), creates 6 rows (each outcome has YES/NO)
  */
-function createMarketRows(category, subCategory1, subCategory2, listing, date, time, timezone, outcomes, prices, question) {
+function createMarketRows(category, subCategory1, subCategory2, listing, listingId, date, time, outcomes, prices, question) {
   const rows = [];
 
   // Detect market type
@@ -463,9 +717,9 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
-        timezone,
         moneyline,
         'YES',
         price
@@ -477,9 +731,9 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
-        timezone,
         moneyline,
         'NO',
         inversePrice
@@ -495,9 +749,9 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
-        timezone,
         outcome,
         'YES',
         price
@@ -515,9 +769,9 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
-        timezone,
         outcome,
         'YES',
         price
@@ -528,9 +782,9 @@ function createMarketRows(category, subCategory1, subCategory2, listing, date, t
         subCategory1,
         subCategory2,
         listing,
+        listingId,
         date,
         time,
-        timezone,
         outcome,
         'NO',
         inversePrice
@@ -579,12 +833,17 @@ function formatDate(date) {
 }
 
 /**
- * Format time as HH:MM (24-hour)
+ * Format time as H:MM AM/PM
  */
 function formatTime(date) {
-  const hours = String(date.getUTCHours()).padStart(2, '0');
+  let hours = date.getUTCHours();
   const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
+
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // Convert 0 to 12 for midnight
+
+  return `${hours}:${minutes} ${ampm}`;
 }
 
 /**
@@ -820,6 +1079,66 @@ function displayMarkets(sheet, markets) {
 }
 
 /**
+ * Filter markets by category keywords when tags are not available
+ * @param {Array} markets - Array of market objects
+ * @param {string} category - Category name to filter by
+ * @returns {Array} Filtered markets with _matchedCategory field added
+ */
+function filterByKeywords(markets, category) {
+  const keywords = CATEGORY_KEYWORDS[category];
+  const excludeKeywords = CATEGORY_KEYWORDS[category + '_Exclude'] || [];
+
+  if (!keywords || keywords.length === 0) {
+    Logger.log(`No keywords defined for category: ${category}`);
+    return markets;
+  }
+
+  Logger.log(`Filtering by keywords for ${category}: ${keywords.slice(0, 10).join(', ')}...`);
+  if (excludeKeywords.length > 0) {
+    Logger.log(`Exclusion keywords: ${excludeKeywords.slice(0, 10).join(', ')}...`);
+  }
+
+  const filtered = markets.filter(market => {
+    // Only search in question field to reduce false positives
+    const question = (market.question || '').toLowerCase();
+
+    // First check exclusion keywords - if any match, skip this market
+    if (excludeKeywords.length > 0) {
+      const hasExclusion = excludeKeywords.some(keyword => {
+        return question.includes(keyword.toLowerCase());
+      });
+
+      if (hasExclusion) {
+        return false; // Skip this market
+      }
+    }
+
+    // Check if any inclusion keyword matches
+    const matchedKeywords = [];
+    const hasKeyword = keywords.some(keyword => {
+      const keywordLower = keyword.toLowerCase();
+      if (question.includes(keywordLower)) {
+        matchedKeywords.push(keyword);
+        return true;
+      }
+      return false;
+    });
+
+    if (hasKeyword) {
+      Logger.log(`✓ Matched (${matchedKeywords.slice(0, 3).join(', ')}): ${market.question.substring(0, 60)}`);
+      // Add the matched category to the market object
+      market._matchedCategory = category;
+      market._matchedKeywords = matchedKeywords;
+    }
+
+    return hasKeyword;
+  });
+
+  Logger.log(`Keyword filtering: ${filtered.length} markets matched out of ${markets.length}`);
+  return filtered;
+}
+
+/**
  * Find tag ID by category name from the tags API
  * @param {string} categoryName - The category name to search for
  * @returns {string|null} The tag ID if found, null otherwise
@@ -885,8 +1204,10 @@ function findTagId(categoryName) {
  */
 function fetchCategoryStructured(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
 
   Logger.log(`Fetching category: ${category}`);
+  Logger.log(`Fetch limit: ${limit}`);
 
   // Try to find the tag ID from the tags API
   const tagId = findTagId(category);
@@ -900,7 +1221,7 @@ function fetchCategoryStructured(category) {
       tag: tagId,
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
@@ -919,7 +1240,7 @@ function fetchCategoryStructured(category) {
     const allMarkets = getMarkets({
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Total markets fetched: ${allMarkets.length}`);
@@ -955,28 +1276,40 @@ function fetchCategoryStructured(category) {
       Logger.log(`All tags: ${allTagsList.join(', ')}`);
     }
 
-    // Filter by tag labels (client-side)
-    const categoryMarkets = allMarkets.filter(market => {
-      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-        return false;
-      }
+    let categoryMarkets = [];
 
-      const tags = market.tags.map(t => {
-        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-        return (t || '').toLowerCase();
-      }).filter(t => t !== '');
+    // Try tag-based filtering first
+    if (marketsWithTags > 0) {
+      categoryMarkets = allMarkets.filter(market => {
+        if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+          return false;
+        }
 
-      const categoryLower = category.toLowerCase();
+        const tags = market.tags.map(t => {
+          if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+          return (t || '').toLowerCase();
+        }).filter(t => t !== '');
 
-      return tags.some(tag => {
-        return tag === categoryLower ||
-               tag.includes(categoryLower) ||
-               (categoryLower.includes(tag) && tag.length > 3) ||
-               tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+        const categoryLower = category.toLowerCase();
+
+        return tags.some(tag => {
+          return tag === categoryLower ||
+                 tag.includes(categoryLower) ||
+                 (categoryLower.includes(tag) && tag.length > 3) ||
+                 tag === (categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower);
+        });
       });
-    });
 
-    Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets via client-side filtering`);
+      Logger.log(`Tag-based filtering: Found ${categoryMarkets.length} markets`);
+    }
+
+    // If tag filtering didn't work, try keyword filtering
+    if (categoryMarkets.length === 0) {
+      Logger.log(`No markets found via tags, trying keyword-based filtering`);
+      categoryMarkets = filterByKeywords(allMarkets, category);
+    }
+
+    Logger.log(`Category "${category}": Found ${categoryMarkets.length} total markets`);
 
     if (categoryMarkets.length === 0) {
       const message = `No markets found for "${category}".\n\n` +
@@ -986,11 +1319,11 @@ function fetchCategoryStructured(category) {
         `- ${marketsWithNoTagsField} have no tags field\n\n` +
         (allTagsList.length > 0
           ? `Available tags (${allTagsList.length}):\n${allTagsList.slice(0, 30).join(', ')}${allTagsList.length > 30 ? '...' : ''}\n\n`
-          : `NO TAGS FOUND IN API RESPONSE!\n\n`) +
+          : `Tried keyword filtering but found no matches.\n\n`) +
         `Solutions:\n` +
         `1. Click "All Markets" to see everything\n` +
-        `2. Click "Show Available Tags" to see official tag list\n` +
-        `3. Check View → Logs for full tag analysis`;
+        `2. Try a different category\n` +
+        `3. Check View → Logs for detailed filtering info`;
 
       SpreadsheetApp.getUi().alert(message);
       Logger.log(message);
@@ -1007,8 +1340,10 @@ function fetchCategoryStructured(category) {
  */
 function fetchCategoryOriginal(category) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
 
   Logger.log(`Fetching category (original format): ${category}`);
+  Logger.log(`Fetch limit: ${limit}`);
 
   // Try to find the tag ID from the tags API
   const tagId = findTagId(category);
@@ -1022,7 +1357,7 @@ function fetchCategoryOriginal(category) {
       tag: tagId,
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
     Logger.log(`Fetched ${markets.length} markets with tag ID "${tagId}"`);
@@ -1041,40 +1376,55 @@ function fetchCategoryOriginal(category) {
     const allMarkets = getMarkets({
       closed: false,
       active: true,
-      limit: 500
+      limit: limit
     });
 
-    // Filter for category - use flexible matching
-    const categoryMarkets = allMarkets.filter(market => {
-      if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
-        return false; // Skip markets without tags
-      }
+    let categoryMarkets = [];
 
-      const tags = market.tags.map(t => {
-        if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
-        return (t || '').toLowerCase();
-      }).filter(t => t !== ''); // Remove empty tags
+    // Check if markets have tags
+    const marketsWithTags = allMarkets.filter(m => m.tags && Array.isArray(m.tags) && m.tags.length > 0).length;
 
-      const categoryLower = category.toLowerCase();
+    // Try tag-based filtering first if tags are available
+    if (marketsWithTags > 0) {
+      categoryMarkets = allMarkets.filter(market => {
+        if (!market.tags || !Array.isArray(market.tags) || market.tags.length === 0) {
+          return false; // Skip markets without tags
+        }
 
-      // Try multiple matching strategies
-      return tags.some(tag => {
-        // Strategy 1: Exact match
-        if (tag === categoryLower) return true;
+        const tags = market.tags.map(t => {
+          if (typeof t === 'object') return (t.label || t.tag || t.name || '').toLowerCase();
+          return (t || '').toLowerCase();
+        }).filter(t => t !== ''); // Remove empty tags
 
-        // Strategy 2: Contains
-        if (tag.includes(categoryLower)) return true;
+        const categoryLower = category.toLowerCase();
 
-        // Strategy 3: Category contains tag
-        if (categoryLower.includes(tag) && tag.length > 3) return true;
+        // Try multiple matching strategies
+        return tags.some(tag => {
+          // Strategy 1: Exact match
+          if (tag === categoryLower) return true;
 
-        // Strategy 4: Singular/plural matching
-        const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
-        if (tag === singularCategory || tag.includes(singularCategory)) return true;
+          // Strategy 2: Contains
+          if (tag.includes(categoryLower)) return true;
 
-        return false;
+          // Strategy 3: Category contains tag
+          if (categoryLower.includes(tag) && tag.length > 3) return true;
+
+          // Strategy 4: Singular/plural matching
+          const singularCategory = categoryLower.endsWith('s') ? categoryLower.slice(0, -1) : categoryLower;
+          if (tag === singularCategory || tag.includes(singularCategory)) return true;
+
+          return false;
+        });
       });
-    });
+
+      Logger.log(`Tag-based filtering: Found ${categoryMarkets.length} markets`);
+    }
+
+    // If tag filtering didn't work, try keyword filtering
+    if (categoryMarkets.length === 0) {
+      Logger.log(`No markets found via tags, trying keyword-based filtering`);
+      categoryMarkets = filterByKeywords(allMarkets, category);
+    }
 
     Logger.log(`Category "${category}": Found ${categoryMarkets.length} markets out of ${allMarkets.length} total`);
 
@@ -1092,7 +1442,7 @@ function fetchCategoryOriginal(category) {
       const allTagsList = Array.from(allTagsSet).sort().slice(0, 20).join(', ');
       Logger.log(`Available tags (first 20): ${allTagsList}`);
 
-      SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTry:\n- Click "📋 Show All Tags" to see available categories\n- Use "All Markets"\n\nFirst 20 tags:\n${allTagsList}`);
+      SpreadsheetApp.getUi().alert(`No markets found for "${category}".\n\nTried keyword filtering but found no matches.\n\nTry:\n- Click "All Markets" to see everything\n- Try a different category\n- Check View → Logs for details`);
       return;
     }
 
@@ -1129,6 +1479,94 @@ function fetchElectionsOriginal() { fetchCategoryOriginal('Elections'); }
 function fetchMentionsOriginal() { fetchCategoryOriginal('Mentions'); }
 
 /**
+ * Fetch NBA listings for October 30, 2025
+ */
+function fetchNBAOct30() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limit = getFetchLimit();
+
+  Logger.log('=== Fetching NBA markets for October 30, 2025 ===');
+
+  // Fetch all active markets
+  const allMarkets = getMarkets({
+    closed: false,
+    active: true,
+    limit: limit
+  });
+
+  Logger.log(`Total markets fetched: ${allMarkets.length}`);
+
+  // NBA-specific keywords
+  const nbaKeywords = [
+    'nba', 'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'sixers', '76ers',
+    'bucks', 'mavericks', 'nuggets', 'suns', 'clippers', 'raptors', 'pacers', 'hawks',
+    'cavaliers', 'wizards', 'hornets', 'magic', 'pistons', 'spurs', 'rockets', 'grizzlies',
+    'pelicans', 'thunder', 'jazz', 'kings', 'blazers', 'timberwolves', 'cavs'
+  ];
+
+  // Target date: October 30, 2025 (check date, not exact time)
+  const targetDateStr = '2025-10-30';
+
+  // First pass: Filter for NBA markets
+  const nbaMarketsAll = allMarkets.filter(market => {
+    const question = (market.question || '').toLowerCase();
+    return nbaKeywords.some(keyword => question.includes(keyword));
+  });
+
+  Logger.log(`Markets with NBA keywords: ${nbaMarketsAll.length}`);
+
+  // Second pass: Filter for October 30, 2025
+  const nbaMarkets = nbaMarketsAll.filter(market => {
+    if (market.endDateIso || market.endDate) {
+      const endDateStr = market.endDateIso || market.endDate;
+      const endDate = new Date(endDateStr);
+
+      // Get date string in YYYY-MM-DD format
+      const year = endDate.getUTCFullYear();
+      const month = String(endDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(endDate.getUTCDate()).padStart(2, '0');
+      const marketDateStr = `${year}-${month}-${day}`;
+
+      Logger.log(`Checking market: "${market.question.substring(0, 50)}" - End date: ${marketDateStr}`);
+
+      if (marketDateStr === targetDateStr) {
+        Logger.log(`✓✓✓ MATCHED: ${market.question.substring(0, 60)}`);
+        market._matchedCategory = 'Sports';
+        market._matchedKeywords = ['NBA', 'October 30, 2025'];
+        return true;
+      }
+    } else {
+      Logger.log(`No end date for: ${market.question.substring(0, 50)}`);
+    }
+
+    return false;
+  });
+
+  Logger.log(`=== FINAL COUNT: ${nbaMarkets.length} NBA markets for October 30, 2025 ===`);
+
+  if (nbaMarkets.length === 0) {
+    // Show dates of NBA markets found
+    const dates = nbaMarketsAll.map(m => {
+      if (m.endDateIso || m.endDate) {
+        const d = new Date(m.endDateIso || m.endDate);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }
+      return 'No date';
+    });
+    const uniqueDates = [...new Set(dates)].sort().slice(0, 20).join(', ');
+
+    SpreadsheetApp.getUi().alert(
+      `No NBA markets found for October 30, 2025.\n\n` +
+      `Found ${nbaMarketsAll.length} NBA markets total with these dates:\n${uniqueDates}\n\n` +
+      `Check View → Logs for details.`
+    );
+    return;
+  }
+
+  displayMarketsStructured(sheet, nbaMarkets);
+}
+
+/**
  * Fetch all markets in structured format
  */
 function fetchMarketsStructured() {
@@ -1136,7 +1574,9 @@ function fetchMarketsStructured() {
 
   // Get parameters from sheet (you can set these in specific cells)
   const tagId = sheet.getRange('A1').getValue(); // Tag ID from cell A1
-  const limit = 500; // Number of markets to fetch
+  const limit = getFetchLimit(); // Get from B1 or use default
+
+  Logger.log(`Fetching all markets with limit: ${limit}`);
 
   // Fetch markets
   const markets = getMarkets({
@@ -1213,6 +1653,11 @@ function onOpen() {
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
     .addSeparator()
+    .addItem('🏀 NBA - Oct 30, 2025', 'fetchNBAOct30')
+    .addSeparator()
+    .addItem('⚙️ Set Entry Range (Min/Max)', 'setFetchLimit')
+    .addItem('🔄 Reset Entry Range', 'resetFetchLimit')
+    .addSeparator()
     .addItem('🔧 Test Market Fetch', 'testMarketFetch')
     .addItem('🔍 Debug API Response', 'debugMarketResponse')
     .addItem('📋 Show All Tags', 'showAllTags')
@@ -1228,10 +1673,11 @@ function onOpen() {
  * Run this to see what tag names Polymarket actually uses
  */
 function showAllTags() {
+  const limit = getFetchLimit();
   const allMarkets = getMarkets({
     closed: false,
     active: true,
-    limit: 500
+    limit: limit
   });
 
   const allTags = new Set();
