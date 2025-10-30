@@ -1485,7 +1485,7 @@ function fetchNBAOct30() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const limit = getFetchLimit();
 
-  Logger.log('Fetching NBA markets for October 30, 2025');
+  Logger.log('=== Fetching NBA markets for October 30, 2025 ===');
 
   // Fetch all active markets
   const allMarkets = getMarkets({
@@ -1494,52 +1494,72 @@ function fetchNBAOct30() {
     limit: limit
   });
 
+  Logger.log(`Total markets fetched: ${allMarkets.length}`);
+
   // NBA-specific keywords
   const nbaKeywords = [
-    'NBA', 'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Knicks', 'Nets', 'Sixers', '76ers',
-    'Bucks', 'Mavericks', 'Nuggets', 'Suns', 'Clippers', 'Raptors', 'Pacers', 'Hawks',
-    'Cavaliers', 'Wizards', 'Hornets', 'Magic', 'Pistons', 'Spurs', 'Rockets', 'Grizzlies',
-    'Pelicans', 'Thunder', 'Jazz', 'Kings', 'Blazers', 'Timberwolves'
+    'nba', 'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'sixers', '76ers',
+    'bucks', 'mavericks', 'nuggets', 'suns', 'clippers', 'raptors', 'pacers', 'hawks',
+    'cavaliers', 'wizards', 'hornets', 'magic', 'pistons', 'spurs', 'rockets', 'grizzlies',
+    'pelicans', 'thunder', 'jazz', 'kings', 'blazers', 'timberwolves', 'cavs'
   ];
 
-  // Target date: October 30, 2025
-  const targetDate = new Date('2025-10-30');
-  const targetDateStart = new Date(targetDate);
-  targetDateStart.setHours(0, 0, 0, 0);
-  const targetDateEnd = new Date(targetDate);
-  targetDateEnd.setHours(23, 59, 59, 999);
+  // Target date: October 30, 2025 (check date, not exact time)
+  const targetDateStr = '2025-10-30';
 
-  // Filter for NBA markets on October 30, 2025
-  const nbaMarkets = allMarkets.filter(market => {
+  // First pass: Filter for NBA markets
+  const nbaMarketsAll = allMarkets.filter(market => {
     const question = (market.question || '').toLowerCase();
+    return nbaKeywords.some(keyword => question.includes(keyword));
+  });
 
-    // Check if question contains NBA keywords
-    const hasNBA = nbaKeywords.some(keyword =>
-      question.includes(keyword.toLowerCase())
-    );
+  Logger.log(`Markets with NBA keywords: ${nbaMarketsAll.length}`);
 
-    if (!hasNBA) return false;
-
-    // Check if market end date is October 30, 2025
+  // Second pass: Filter for October 30, 2025
+  const nbaMarkets = nbaMarketsAll.filter(market => {
     if (market.endDateIso || market.endDate) {
-      const endDate = new Date(market.endDateIso || market.endDate);
+      const endDateStr = market.endDateIso || market.endDate;
+      const endDate = new Date(endDateStr);
 
-      // Check if end date falls on October 30, 2025
-      if (endDate >= targetDateStart && endDate <= targetDateEnd) {
-        Logger.log(`✓ Matched NBA Oct 30: ${market.question.substring(0, 60)}`);
+      // Get date string in YYYY-MM-DD format
+      const year = endDate.getUTCFullYear();
+      const month = String(endDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(endDate.getUTCDate()).padStart(2, '0');
+      const marketDateStr = `${year}-${month}-${day}`;
+
+      Logger.log(`Checking market: "${market.question.substring(0, 50)}" - End date: ${marketDateStr}`);
+
+      if (marketDateStr === targetDateStr) {
+        Logger.log(`✓✓✓ MATCHED: ${market.question.substring(0, 60)}`);
         market._matchedCategory = 'Sports';
         market._matchedKeywords = ['NBA', 'October 30, 2025'];
         return true;
       }
+    } else {
+      Logger.log(`No end date for: ${market.question.substring(0, 50)}`);
     }
 
     return false;
   });
 
-  Logger.log(`Found ${nbaMarkets.length} NBA markets for October 30, 2025`);
+  Logger.log(`=== FINAL COUNT: ${nbaMarkets.length} NBA markets for October 30, 2025 ===`);
 
   if (nbaMarkets.length === 0) {
-    SpreadsheetApp.getUi().alert(`No NBA markets found for October 30, 2025.\n\nTried ${allMarkets.length} total markets.`);
+    // Show dates of NBA markets found
+    const dates = nbaMarketsAll.map(m => {
+      if (m.endDateIso || m.endDate) {
+        const d = new Date(m.endDateIso || m.endDate);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }
+      return 'No date';
+    });
+    const uniqueDates = [...new Set(dates)].sort().slice(0, 20).join(', ');
+
+    SpreadsheetApp.getUi().alert(
+      `No NBA markets found for October 30, 2025.\n\n` +
+      `Found ${nbaMarketsAll.length} NBA markets total with these dates:\n${uniqueDates}\n\n` +
+      `Check View → Logs for details.`
+    );
     return;
   }
 
@@ -1614,9 +1634,7 @@ function onOpen() {
       .addItem('World', 'fetchWorldStructured')
       .addItem('Economy', 'fetchEconomyStructured')
       .addItem('Elections', 'fetchElectionsStructured')
-      .addItem('Mentions', 'fetchMentionsStructured')
-      .addSeparator()
-      .addItem('🏀 NBA - Oct 30, 2025', 'fetchNBAOct30'))
+      .addItem('Mentions', 'fetchMentionsStructured'))
     .addSubMenu(ui.createMenu('Original Format')
       .addItem('All Markets', 'fetchPolymarketData')
       .addSeparator()
@@ -1634,6 +1652,8 @@ function onOpen() {
       .addItem('Mentions', 'fetchMentionsOriginal'))
     .addSeparator()
     .addItem('Show Available Tags', 'displayTags')
+    .addSeparator()
+    .addItem('🏀 NBA - Oct 30, 2025', 'fetchNBAOct30')
     .addSeparator()
     .addItem('⚙️ Set Entry Range (Min/Max)', 'setFetchLimit')
     .addItem('🔄 Reset Entry Range', 'resetFetchLimit')
