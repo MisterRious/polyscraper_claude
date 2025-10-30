@@ -27,23 +27,55 @@ const SETTINGS_ROW_MIN_ENTRIES = 2; // Row number for minimum entries
 const SETTINGS_ROW_MAX_ENTRIES = 3; // Row number for maximum entries
 
 // Category keywords for filtering when tags are not available
-// Using more specific patterns to avoid false positives
+// Using specific patterns with exclusions to avoid false positives
 const CATEGORY_KEYWORDS = {
   'Sports': [
+    // Major Championships & Events
     'Super Bowl', 'World Series', 'World Cup', 'Stanley Cup', 'NBA Finals', 'NBA Championship',
-    'NFL playoff', 'NFL champion', 'MLB playoff', 'NHL playoff', 'UFC champion',
+    'NFL playoff', 'NFL champion', 'MLB playoff', 'NHL playoff', 'NHL champion', 'UFC champion',
     'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Champions League',
-    'Olympics', 'Olympic', 'Formula 1', 'F1 champion', 'Grand Prix',
-    'touchdown', 'home run', 'goal scored', 'hat trick',
-    'quarterback', 'pitcher', 'striker', 'forward', 'goalkeeper',
-    'MVP award', 'Rookie of the Year', 'Cy Young',
-    'tennis', 'Wimbledon', 'US Open', 'French Open', 'Australian Open',
-    'boxing', 'heavyweight', 'UFC fight', 'knockout',
-    'soccer match', 'football match', 'basketball game', 'baseball game', 'hockey game',
-    'team to win', 'make the playoffs', 'win the division', 'win championship',
-    'Arsenal', 'Liverpool', 'Manchester', 'Barcelona', 'Real Madrid', 'Bayern',
-    'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Yankees', 'Red Sox', 'Dodgers',
-    'Patriots', 'Chiefs', 'Cowboys', '49ers', 'Eagles'
+    'Olympics', 'Olympic', 'Formula 1', 'Drivers Champion', "Drivers' Champion", 'F1 World',
+    'Grand Prix', 'Grand Slam',
+
+    // Sports-specific actions & terms (unambiguous)
+    'touchdown', 'home run', 'goal scored', 'hat trick', 'strikeout',
+    'quarterback', 'pitcher', 'striker', 'goalie', 'goalkeeper', 'running back',
+
+    // Awards & Achievements
+    'MVP', 'Rookie of the Year', 'Cy Young', 'Heisman', 'Ballon d\'Or',
+
+    // Individual Sports
+    'tennis', 'Wimbledon', 'US Open tennis', 'French Open', 'Australian Open',
+    'boxing match', 'heavyweight', 'UFC fight', 'knockout', 'KO',
+    'golf tournament', 'PGA', 'Masters golf',
+
+    // Team Sports & Leagues (with context)
+    'NBA season', 'NFL season', 'MLB season', 'NHL season', 'MLS season',
+    'basketball season', 'football season', 'baseball season', 'hockey season', 'soccer season',
+    'win the title', 'win championship', 'win the league',
+    'make the playoffs', 'playoff berth', 'win the division',
+
+    // Specific Teams (NBA)
+    'Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls', 'Knicks', 'Nets', 'Sixers', '76ers',
+    'Bucks', 'Mavericks', 'Nuggets', 'Suns', 'Clippers', 'Raptors',
+
+    // Specific Teams (NFL)
+    'Patriots', 'Chiefs', 'Cowboys', '49ers', 'Eagles', 'Packers', 'Steelers', 'Ravens',
+    'Bills', 'Dolphins', 'Jets', 'Bengals', 'Browns', 'Rams', 'Seahawks',
+
+    // Specific Teams (MLB)
+    'Yankees', 'Red Sox', 'Dodgers', 'Blue Jays', 'Mets', 'Cubs', 'Giants', 'Cardinals',
+    'Astros', 'Braves', 'Phillies',
+
+    // Specific Teams (Soccer/Football)
+    'Arsenal', 'Liverpool', 'Manchester United', 'Manchester City', 'Chelsea', 'Tottenham',
+    'Barcelona', 'Real Madrid', 'Bayern Munich', 'PSG', 'Juventus', 'AC Milan', 'Inter Milan',
+
+    // Racing
+    'Verstappen', 'Hamilton', 'Leclerc', 'NASCAR', 'IndyCar', 'F1 race',
+
+    // General sports terms (safe)
+    'athlete', 'player', 'coach', 'manager', 'draft pick', 'transfer', 'signing'
   ],
   // Exclusion keywords that indicate non-sports markets
   'Sports_Exclude': [
@@ -92,19 +124,22 @@ function ensureSettingsSheet() {
     // Set up headers and initial values
     settingsSheet.getRange('A1').setValue('Setting').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
     settingsSheet.getRange('B1').setValue('Value').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
+    settingsSheet.getRange('C1').setValue('Description').setFontWeight('bold').setBackground('#4285f4').setFontColor('white');
 
     settingsSheet.getRange('A2').setValue('Min Entries');
     settingsSheet.getRange('B2').setValue(1);
-    settingsSheet.getRange('B2').setNote('Minimum number of markets to display.\nDefault: 1\nShows warning if fewer results found.');
+    settingsSheet.getRange('C2').setValue('Minimum number of markets to display (usually 1)');
 
     settingsSheet.getRange('A3').setValue('Max Entries');
     settingsSheet.getRange('B3').setValue(DEFAULT_FETCH_LIMIT);
-    settingsSheet.getRange('B3').setNote(`Maximum number of markets to fetch from API.\nDefault: ${DEFAULT_FETCH_LIMIT}\nAPI Max: 1000`);
+    settingsSheet.getRange('C3').setValue(`Maximum number of markets to fetch from API (max: 1000)`);
 
     // Format the sheet
-    settingsSheet.setColumnWidth(1, 200);
-    settingsSheet.setColumnWidth(2, 150);
+    settingsSheet.setColumnWidth(1, 150);
+    settingsSheet.setColumnWidth(2, 100);
+    settingsSheet.setColumnWidth(3, 350);
     settingsSheet.getRange('B2:B3').setFontWeight('bold').setBackground('#fff2cc');
+    settingsSheet.getRange('A:C').setVerticalAlignment('middle');
 
     Logger.log('Created Settings sheet with default configuration');
   }
